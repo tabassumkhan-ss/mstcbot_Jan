@@ -587,7 +587,7 @@
   user: null
 };
 
-const BACKEND_URL = "https://mstcbotnew-production.up.railway.app";
+const BACKEND_URL = "https://mstcbotjan-production.up.railway.app";
 const BOT_USERNAME = "mstcrewardbot"; 
 
   // --- Referral from URL (?ref=...) ---
@@ -609,7 +609,7 @@ if (!tg?.initData) {
 }
     // --- TON Connect UI (global, only once) ---
 const tonConnectUI = new TON_CONNECT_UI.TonConnectUI({
-  manifestUrl: 'https://mstcbotnew-production.up.railway.app/static/tonconnect-manifest.json'
+  manifestUrl: 'https://mstcbotjan-production.up.railway.app/static/tonconnect-manifest.json'
 });
 
 tonConnectUI.onStatusChange(wallet => {
@@ -1570,7 +1570,7 @@ async function doRegister() {
   );
 
   // 🔄 BACKGROUND REGISTER (NON-BLOCKING)
-  fetch("/webapp/register", {
+  fetch(BACKEND_URL + "/webapp/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ initData: Telegram.WebApp.initData })

@@ -1229,22 +1229,15 @@ def telegram_webhook():
     if not update:
         return jsonify(ok=False), 400
 
+    # Respond immediately to Telegram
+    response = jsonify(ok=True)
+
     try:
-        from .telegram_bot import handle_command
+        from backend.telegram_bot import handle_command
         handle_command(update)
     except Exception:
         app.logger.exception("handle_command failed")
 
-    return jsonify(ok=True), 200
-
-# Entry point for local run
-if __name__ == "__main__":
-    logger.info("Starting backend.app entrypoint (pid=%s)", os.getpid())
-    port = int(os.environ.get("PORT", 8001))
-    host = "0.0.0.0"
-    debug = False
-    logger.info("Flask run -> host=%s port=%s debug=%s", host, port, debug)
-    app.run(host=host, port=port, debug=debug)
-
+    return response, 200
 
 
