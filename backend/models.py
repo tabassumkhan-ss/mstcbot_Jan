@@ -6,6 +6,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from dotenv import load_dotenv
+Base.metadata.create_all(bind=engine)
 
 load_dotenv()
 
