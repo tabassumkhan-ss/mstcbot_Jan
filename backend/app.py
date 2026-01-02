@@ -1163,6 +1163,7 @@ def debug_user(user_id):
                 "role": user.role,
                 "referrer_id": user.referrer_id,
                 "total_team_business": float(user.total_team_business or 0),
+                "active_origin_count": int(user.active_origin_count or 0),
             },
         )
     finally:
