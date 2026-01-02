@@ -1616,12 +1616,20 @@ document.addEventListener("click", async (e) => {
   const yesBtn = e.target.closest("#yesBtn");
   if (!yesBtn) return;
 
-  console.log("✅ YES BUTTON CLICKED (delegated)");
-
-  if (yesBtn.disabled) return;
   yesBtn.disabled = true;
 
-  await doRegister();
+  const data = await loadActivationStatus(); // calls /webapp/init
+
+  if (data?.ok && data.exists === true) {
+    renderRegisteredView(
+      data.user.id,
+      data.user.first_name,
+      null,
+      data.user
+    );
+  }
+
+  yesBtn.disabled = false;
 });
 
 
