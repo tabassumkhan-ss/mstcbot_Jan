@@ -380,7 +380,7 @@ def webapp_init():
     if not telegram_id:
         return jsonify(ok=False, error="invalid_telegram_user"), 400
 
-    # 🔍 REF DEBUG LOG
+    # 🔍 DEBUG REFERRAL
     app.logger.info(
         "REF DEBUG → telegram_id=%s start_param=%s ref=%s",
         telegram_id,
@@ -395,45 +395,47 @@ def webapp_init():
 
     db = SessionLocal()
     try:
+        # 🔎 check if user exists
         user = db.query(User).filter(User.id == telegram_id).first()
 
-        # 🟢 FIRST TIME USER → CREATE + LINK REFERRER
-        if not user:
-            user = User(
-                id=telegram_id,
-                username=username,
-                first_name=first_name,
-                referrer_id=referrer_id
-            )
-            db.add(user)
-            db.commit()
-            db.refresh(user)
-
-            app.logger.info(
-                "USER CREATED → id=%s referrer_id=%s",
-                user.id,
-                user.referrer_id
+        if user:
+            return jsonify(
+                ok=True,
+                exists=True,
+                user={
+                    "id": user.id,
+                    "first_name": user.first_name,
+                    "username": user.username,
+                    "role": user.role,
+                    "self_activated": user.self_activated,
+                    "total_team_business": float(user.total_team_business or 0),
+                    "active_origin_count": int(user.active_origin_count or 0),
+                }
             )
 
-            return jsonify(ok=True, exists=False)
-
-        # 🟢 EXISTING USER
-        return jsonify(
-            ok=True,
-            exists=True,
-            user={
-                "id": user.id,
-                "first_name": user.first_name,
-                "username": user.username,
-                "role": user.role,
-                "self_activated": user.self_activated,
-                "total_team_business": float(user.total_team_business or 0),
-                "active_origin_count": int(user.active_origin_count or 0),
-            }
+        # 🆕 CREATE NEW USER WITH REFERRER
+        user = User(
+            id=telegram_id,
+            first_name=first_name,
+            username=username,
+            referrer_id=referrer_id
         )
+
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        app.logger.info(
+            "USER CREATED → id=%s referrer_id=%s",
+            user.id,
+            user.referrer_id
+        )
+
+        return jsonify(ok=True, exists=False)
 
     finally:
         db.close()
+
 
 
 from sqlalchemy.exc import OperationalError
