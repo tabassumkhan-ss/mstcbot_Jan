@@ -359,12 +359,44 @@ def webapp_init():
     if not telegram_id:
         return jsonify(ok=False, error="invalid_telegram_user"), 400
 
+    # 🔍 REF DEBUG LOG
+    app.logger.info(
+        "REF DEBUG → telegram_id=%s start_param=%s ref=%s",
+        telegram_id,
+        start_param,
+        data.get("ref")
+    )
+
+    # determine referrer
+    referrer_id = None
+    if start_param and start_param.isdigit():
+        referrer_id = int(start_param)
+
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.id == telegram_id).first()
+
+        # 🟢 FIRST TIME USER → CREATE + LINK REFERRER
         if not user:
+            user = User(
+                id=telegram_id,
+                username=username,
+                first_name=first_name,
+                referrer_id=referrer_id
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+
+            app.logger.info(
+                "USER CREATED → id=%s referrer_id=%s",
+                user.id,
+                user.referrer_id
+            )
+
             return jsonify(ok=True, exists=False)
 
+        # 🟢 EXISTING USER
         return jsonify(
             ok=True,
             exists=True,
