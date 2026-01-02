@@ -43,6 +43,27 @@ logger.info(
 app = Flask(__name__)
 CORS(app)
 
+@app.route("/debug/create_user", methods=["POST"])
+def debug_create_user():
+    data = request.get_json() or {}
+    db = SessionLocal()
+    try:
+        user = User(
+            id=data["id"],
+            first_name=data.get("first_name"),
+            username=data.get("username"),
+            referrer_id=data.get("referrer_id")
+        )
+        db.add(user)
+        db.commit()
+        return jsonify(ok=True)
+    except Exception as e:
+        db.rollback()
+        return jsonify(ok=False, error=str(e)), 400
+    finally:
+        db.close()
+
+
 @app.route("/health")
 def health():
     try:
