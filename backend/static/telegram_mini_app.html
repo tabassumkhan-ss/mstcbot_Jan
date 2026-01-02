@@ -837,9 +837,7 @@ function renderRankPanel(userData) {
 
       <div class="rank-header">
         <div class="rank-header-title">🏅 Your Rank & Levels</div>
-        <div class="rank-current-label">
-          Current: <b>${ranks.current}</b>
-        </div>
+        
       </div>
 
       <div class="rank-tabs">
@@ -1012,8 +1010,12 @@ function renderUserHeader(userData) {
       </div>
 
       <div class="row mini">
-        Telegram ID: <span class="mono">${tgId}</span>
+         <span class="mono">${tgId}</span>
       </div>
+
+      <div class="row mini" style="margin-top:4px;">
+      Current Rank: <b>${ranks.current}</b>
+    </div>
 
       <div class="row ref-line">
         <span class="mini">Referral Link</span>

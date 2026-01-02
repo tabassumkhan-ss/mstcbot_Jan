@@ -13,17 +13,17 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is not set")
 
-# ✅ 1. Engine
+
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
     pool_recycle=300,
 )
 
-# ✅ 2. Session
+
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
-# ✅ 3. Base MUST come before models
+
 Base = declarative_base()
 
 
@@ -69,5 +69,5 @@ class ReferralEvent(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-# ✅ 4. CREATE TABLES (ONLY AFTER MODELS EXIST)
+
 Base.metadata.create_all(bind=engine)
