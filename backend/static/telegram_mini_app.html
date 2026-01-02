@@ -1148,10 +1148,15 @@ function showRegisterScreen() {
   // --- YES / NO button handlers + init ---
 document.addEventListener("DOMContentLoaded", async () => {
   try {
-    const data = await loadActivationStatus(); // calls /webapp/init
+    const data = await loadActivationStatus(); // 🔥 calls /webapp/init
 
-    if (data?.ok && data.exists === true) {
-      // user already registered earlier
+    if (!data || data.ok === false) {
+      showRegisterScreen();
+      return;
+    }
+
+    if (data.exists === true) {
+      // 🟢 EXISTING USER (referrer already fixed)
       renderRegisteredView(
         data.user.id,
         data.user.first_name,
@@ -1161,15 +1166,18 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    // 👇 NEW USER — show YES / NO only
+    // 🆕 NEW USER
+    // referrer_id has JUST been saved in DB here
+    console.log("🆕 New user created with referrer");
+
     showRegisterScreen();
 
   } catch (e) {
     console.error("Init failed", e);
     showRegisterScreen();
   }
-  
 });
+
 
 
   
