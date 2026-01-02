@@ -1147,28 +1147,18 @@ function showRegisterScreen() {
 
   // --- YES / NO button handlers + init ---
 document.addEventListener("DOMContentLoaded", async () => {
-  try {
-    const data = await loadActivationStatus(); // calls /webapp/init
+  const data = await loadActivationStatus(); // calls /webapp/init
 
-    if (data?.ok && data.exists === true) {
-      // user already registered earlier
-      renderRegisteredView(
-        data.user.id,
-        data.user.first_name,
-        null,
-        data.user
-      );
-      return;
-    }
-
-    // 👇 NEW USER — show YES / NO only
-    showRegisterScreen();
-
-  } catch (e) {
-    console.error("Init failed", e);
-    showRegisterScreen();
+  if (data?.exists === true) {
+    renderRegisteredView(
+      data.user.id,
+      data.user.first_name,
+      null,
+      data.user
+    );
+  } else {
+    showRegisterScreen(); // just YES/NO UI
   }
-  
 });
 
 
