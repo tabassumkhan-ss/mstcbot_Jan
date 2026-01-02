@@ -439,30 +439,6 @@ def webapp_init():
 
 from sqlalchemy.exc import OperationalError
 
-@app.route("/webapp/register", methods=["POST"])
-def webapp_register():
-    data = request.get_json(silent=True) or {}
-    init_data = data.get("initData")
-
-    if not init_data:
-        return jsonify(ok=False, error="missing_init_data"), 400
-
-    uid, _, _, _ = verify_telegram_init_data(init_data)
-    if not uid:
-        return jsonify(ok=False, error="invalid_init_data"), 400
-
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.id == uid).first()
-        if not user:
-            return jsonify(ok=False, error="user_not_initialized"), 400
-
-        # ✅ DO NOT CREATE USER HERE
-        return jsonify(ok=True)
-
-    finally:
-        db.close()
-
 @app.route("/webapp/user", methods=["POST"])
 def webapp_user():
     data = request.get_json(silent=True) or {}

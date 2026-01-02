@@ -1542,39 +1542,6 @@ function logout() {
 let REGISTER_RETRIES = 0;
 const MAX_REGISTER_RETRIES = 6;
 
-async function doRegister() {
-  const yesBtn = document.getElementById("yesBtn");
-  yesBtn.disabled = true;
-
-  try {
-    // Just re-call init
-    const data = await loadActivationStatus(); // calls /webapp/init
-
-    if (!data || data.ok === false) {
-      throw new Error("Init failed");
-    }
-
-    if (data.exists === true) {
-      // ✅ User already created with referrer_id
-      renderRegisteredView(
-        data.user.id,
-        data.user.first_name,
-        null,
-        data.user
-      );
-      return;
-    }
-
-    alert("Registration failed. Please reopen the app.");
-  } catch (e) {
-    console.error("Register error:", e);
-    alert("Network error. Please try again.");
-  } finally {
-    yesBtn.disabled = false;
-  }
-}
-
-
 let DASHBOARD_RETRIES = 0;
 const MAX_DASHBOARD_RETRIES = 8;
 
