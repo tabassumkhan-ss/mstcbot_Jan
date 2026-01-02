@@ -1547,7 +1547,7 @@ async function doRegister() {
   yesBtn.disabled = true;
 
   try {
-    // 🔥 CALL init again — this is where referrer is saved
+    // 🔁 Call /webapp/init again
     const res = await fetch(BACKEND_URL + "/webapp/init", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1558,31 +1558,31 @@ async function doRegister() {
     });
 
     const data = await res.json();
-    console.log("REGISTER INIT RESPONSE:", data);
 
     if (!data.ok) {
       throw new Error("Init failed");
     }
 
-    // 🟢 Now user EXISTS with referrer saved
-    if (data.exists === true) {
-      renderRegisteredView(
-        data.user.id,
-        data.user.first_name,
-        null,
-        data.user
-      );
-    } else {
-      // user just created → reload dashboard safely
-      await loadDashboardAfterRegister();
+    // ✅ User was JUST created with referrer
+    if (data.exists === false) {
+      console.log("✅ New user created with referrer");
     }
 
+    // ✅ Now render dashboard with REAL backend user
+    renderRegisteredView(
+      data.user?.id || Telegram.WebApp.initDataUnsafe.user.id,
+      data.user?.first_name || Telegram.WebApp.initDataUnsafe.user.first_name,
+      null,
+      data.user || {}
+    );
+
   } catch (e) {
-    console.error("Register error", e);
-    alert("Registration failed. Please reopen the app.");
+    console.error("Register failed", e);
+    alert("Registration failed, please retry");
     yesBtn.disabled = false;
   }
 }
+
 
 
 let DASHBOARD_RETRIES = 0;
