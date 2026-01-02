@@ -836,8 +836,7 @@ function renderRankPanel(userData) {
     <div class="rank-panel">
 
       <div class="rank-header">
-        <div class="rank-header-title">🏅 Your Rank & Levels</div>
-        
+                
       </div>
 
       <div class="rank-tabs">
@@ -996,6 +995,8 @@ function renderUserHeader(userData) {
     userData.id ||
     tgUser.id ||
     "";
+
+    const ranks = computeRanks(userData);
 
   // ✅ CORRECT referral link
   const refLink = `https://t.me/${BOT_USERNAME}?start=${tgId}`;
