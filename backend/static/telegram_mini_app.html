@@ -1148,15 +1148,10 @@ function showRegisterScreen() {
   // --- YES / NO button handlers + init ---
 document.addEventListener("DOMContentLoaded", async () => {
   try {
-    const data = await loadActivationStatus(); // 🔥 calls /webapp/init
+    const data = await loadActivationStatus(); // calls /webapp/init
 
-    if (!data || data.ok === false) {
-      showRegisterScreen();
-      return;
-    }
-
-    if (data.exists === true) {
-      // 🟢 EXISTING USER (referrer already fixed)
+    if (data?.ok && data.exists === true) {
+      // user already registered earlier
       renderRegisteredView(
         data.user.id,
         data.user.first_name,
@@ -1166,18 +1161,15 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    // 🆕 NEW USER
-    // referrer_id has JUST been saved in DB here
-    console.log("🆕 New user created with referrer");
-
+    // 👇 NEW USER — show YES / NO only
     showRegisterScreen();
 
   } catch (e) {
     console.error("Init failed", e);
     showRegisterScreen();
   }
+  
 });
-
 
 
   
@@ -1554,38 +1546,42 @@ async function doRegister() {
   const yesBtn = document.getElementById("yesBtn");
   yesBtn.disabled = true;
 
-  const tgUser = Telegram.WebApp.initDataUnsafe?.user;
-  if (!tgUser) {
-    alert("Telegram user not available");
-    yesBtn.disabled = false;
-    return;
-  }
+  try {
+    // 🔥 CALL init again — this is where referrer is saved
+    const res = await fetch(BACKEND_URL + "/webapp/init", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        initData: Telegram.WebApp.initData,
+        ref: window.currentRef || null
+      })
+    });
 
-  // 🔥 OPEN DASHBOARD IMMEDIATELY
-  renderRegisteredView(
-    tgUser.id,
-    tgUser.first_name,
-    tgUser.photo_url || null,
-    {
-      id: tgUser.id,
-      first_name: tgUser.first_name,
-      username: tgUser.username,
-      photo_url: tgUser.photo_url,
-      role: "member",
-      self_activated: false,
-      balance_musd: 0,
-      balance_mstc: 0,
-      total_team_business: 0,
-      active_origin_count: 0
+    const data = await res.json();
+    console.log("REGISTER INIT RESPONSE:", data);
+
+    if (!data.ok) {
+      throw new Error("Init failed");
     }
-  );
 
-  // 🔄 BACKGROUND REGISTER (NON-BLOCKING)
-  fetch(BACKEND_URL + "/webapp/register", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ initData: Telegram.WebApp.initData })
-  }).catch(() => {});
+    // 🟢 Now user EXISTS with referrer saved
+    if (data.exists === true) {
+      renderRegisteredView(
+        data.user.id,
+        data.user.first_name,
+        null,
+        data.user
+      );
+    } else {
+      // user just created → reload dashboard safely
+      await loadDashboardAfterRegister();
+    }
+
+  } catch (e) {
+    console.error("Register error", e);
+    alert("Registration failed. Please reopen the app.");
+    yesBtn.disabled = false;
+  }
 }
 
 

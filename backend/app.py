@@ -447,32 +447,21 @@ def webapp_register():
     if not init_data:
         return jsonify(ok=False, error="missing_init_data"), 400
 
-    uid, username, first_name, _ = verify_telegram_init_data(init_data)
+    uid, _, _, _ = verify_telegram_init_data(init_data)
     if not uid:
         return jsonify(ok=False, error="invalid_init_data"), 400
 
     db = SessionLocal()
     try:
-        user = get_or_create_user(
-            db,
-            {"id": uid, "username": username, "first_name": first_name}
-        )
+        user = db.query(User).filter(User.id == uid).first()
+        if not user:
+            return jsonify(ok=False, error="user_not_initialized"), 400
 
-        return jsonify(ok=True, user={
-            "id": user.id,
-            "first_name": user.first_name,
-            "username": user.username,
-            "role": user.role,
-            "self_activated": user.self_activated,
-        })
-
-    except Exception:
-        current_app.logger.exception("register failed")
-        return jsonify(ok=False, error="server_error"), 500
+        # ✅ DO NOT CREATE USER HERE
+        return jsonify(ok=True)
 
     finally:
         db.close()
-
 
 @app.route("/webapp/user", methods=["POST"])
 def webapp_user():
