@@ -899,17 +899,26 @@ function bindRankLogic(userData) {
 
 function bindDepositLogic() {
   const btn = document.getElementById("submitDeposit");
+  const amountInput = document.getElementById("amt");
+
+  console.log("bindDepositLogic:", btn, amountInput);
+
+  if (!btn || !amountInput) {
+    console.error("Deposit UI not ready");
+    return;
+  }
 
   btn.addEventListener("click", async () => {
-    const amountInput = document.getElementById("depositAmount");
+    console.log("✅ Submit Deposit clicked");
+
     const amount = Number(amountInput.value);
 
-    if (!amount || amount <= 0) {
-      alert("Enter valid amount");
+    if (!amount || amount < 20) {
+      alert("Minimum deposit is $20");
       return;
     }
 
-    // 🔐 1️⃣ ENSURE WALLET CONNECTED
+    // 1️⃣ Ensure wallet connected
     if (!isWalletConnected()) {
       try {
         await tonConnectUI.connectWallet();
@@ -919,45 +928,33 @@ function bindDepositLogic() {
       }
     }
 
-    // 🔐 2️⃣ SEND TRANSACTION
+    // 2️⃣ Send TON transaction
     try {
       const tx = {
         validUntil: Math.floor(Date.now() / 1000) + 300,
         messages: [
           {
-            address: "YOUR_RECEIVER_TON_ADDRESS",
-            amount: (amount * 1e9).toString(), // TON → nanoTON
+            address: "0QCaCGBFDP-J2Yxrz1Qwu_lPZ0K4nVv9BrzbZ9_BU5TUAZl4",
+            amount: Math.floor(amount * 1e9).toString(), // TEST RATE
           }
         ]
       };
 
       const result = await tonConnectUI.sendTransaction(tx);
 
-      // 🔐 3️⃣ SEND TX PROOF TO BACKEND
-      const res = await fetch("/deposit/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          initData: Telegram.WebApp.initData,
-          amount,
-          tx_boc: result.boc
-        })
-      });
+      console.log("TON tx sent:", result);
 
-      const data = await res.json();
-      if (!data.ok) {
-        throw new Error(data.error || "Deposit failed");
-      }
+      alert("✅ Transaction sent. Backend verification pending.");
 
-      alert("✅ Deposit successful");
       amountInput.value = "";
 
     } catch (err) {
-      console.error(err);
-      alert("Transaction failed or rejected");
+      console.error("TX failed:", err);
+      alert("Transaction rejected or failed");
     }
   });
 }
+
 
 function renderUserHeader(userData) {
   const tgUser = Telegram.WebApp?.initDataUnsafe?.user || {};
