@@ -250,6 +250,22 @@ ROLE_LEVEL1_PCT = {
     "creator": 0.25,
 }
 
+def deduct_wallet_balance(user: User, amount: float):
+    musd_cut = round(amount * 0.70, 2)
+    mstc_cut = round(amount * 0.30, 2)
+
+    if (user.balance_musd or 0) < musd_cut:
+        raise ValueError("Insufficient MUSD balance")
+
+    if (user.balance_mstc or 0) < mstc_cut:
+        raise ValueError("Insufficient MSTC balance")
+
+    user.balance_musd -= musd_cut
+    user.balance_mstc -= mstc_cut
+
+    return musd_cut, mstc_cut
+
+
 def propagate_team_business(db: SessionLocal, user: User, amount: float, became_origin_now: bool):
     visited = set()
     current = user
@@ -269,30 +285,35 @@ def distribute_club_bonus(db: SessionLocal, amount: float) -> float:
     club_cut = round(amount * 0.02, 2)
     if club_cut <= 0:
         return 0.0
+
     achievers = (
         db.query(User)
         .filter(
             User.self_activated == True,
-            User.role.in_( ["life_changer", "advisor", "visionary", "creator"] )
+            User.role.in_(["life_changer", "advisor", "visionary", "creator"])
         )
         .all()
     )
+
+    # 🔴 No achievers → goes to company pool
     if not achievers:
-        add_to_company_pool(db, club_cut)
+        add_to_company_pool(db, club_cut, commit=True)   # 🔥 COMMIT REQUIRED
         return club_cut
+
     per_user = round(club_cut / len(achievers), 2)
-    if per_user <= 0:
-        add_to_company_pool(db, club_cut)
-        return club_cut
     distributed_total = 0.0
+
     for u in achievers:
         u.club_income = float(u.club_income or 0.0) + per_user
         db.add(u)
         distributed_total += per_user
+
     leftover = round(club_cut - distributed_total, 2)
     if leftover > 0:
-        add_to_company_pool(db, leftover, commit=False)
+        add_to_company_pool(db, leftover, commit=True)   # 🔥 COMMIT REQUIRED
+
     return club_cut
+
 
 COMPANY_USER_ID = -999999999
 
@@ -1090,6 +1111,7 @@ def debug_simulate_deposit():
         return jsonify(ok=False, error="invalid_debug_key"), 401
 
     payload = request.get_json(silent=True) or {}
+
     try:
         tg_id = int(payload.get("user_id"))
         amount = float(payload.get("amount"))
@@ -1103,30 +1125,38 @@ def debug_simulate_deposit():
         if not user:
             return jsonify(ok=False, error="user_not_found"), 404
 
+        # 🔹 1️⃣ DEDUCT WALLET BALANCE (70% MUSD / 30% MSTC)
+        try:
+            musd_used, mstc_used = deduct_wallet_balance(user, amount)
+        except ValueError as e:
+            db.rollback()
+            return jsonify(ok=False, error=str(e)), 400
+
         became_origin_now = False
 
-        # 🔹 Activation & role
+        # 🔹 2️⃣ ACTIVATE USER IF ELIGIBLE
         if amount >= 20:
             if not user.self_activated:
                 user.self_activated = True
+
             if user.role == "user":
                 user.role = "origin"
                 became_origin_now = True
 
-        # 🔹 User business
+        # 🔹 3️⃣ USER BUSINESS
         user.total_team_business = float(user.total_team_business or 0) + amount
         db.add(user)
 
-        # 🔹 Team propagation
+        # 🔹 4️⃣ TEAM BUSINESS PROPAGATION
         propagate_team_business(db, user, amount, became_origin_now)
 
-        # 🔹 Rank updates
+        # 🔹 5️⃣ RANK UPDATE
         update_rank(user)
 
-        # 🔹 CLUB BONUS (ONLY ONCE)
+        # 🔹 6️⃣ CLUB BONUS (2%)
         club_cut = distribute_club_bonus(db, amount)
 
-        # 🔹 Transaction record
+        # 🔹 7️⃣ TRANSACTION RECORD
         db.add(Transaction(
             user_id=user.id,
             amount=amount,
@@ -1136,12 +1166,22 @@ def debug_simulate_deposit():
             created_at=datetime.utcnow(),
         ))
 
+        # 🔹 8️⃣ FINAL COMMIT
         db.commit()
         db.refresh(user)
 
         return jsonify(
             ok=True,
-            user={"id": user.id, "role": user.role},
+            user={
+                "id": user.id,
+                "role": user.role,
+                "balance_musd": float(user.balance_musd or 0),
+                "balance_mstc": float(user.balance_mstc or 0),
+            },
+            deducted={
+                "musd": musd_used,
+                "mstc": mstc_used,
+            },
             club_cut=club_cut
         )
 
