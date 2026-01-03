@@ -624,6 +624,10 @@ tonConnectUI.setConnectRequestParameters({
   testnet: true
 });
 
+function isWalletConnected() {
+  return !!tonConnectUI.wallet?.account?.address;
+}
+
 const TREASURY_TON_ADDRESS =
   "UQAZGsz5gaOVtAK67pITWUMUMYNMjccCSbMC5sAMx2say10K";
 
@@ -916,56 +920,52 @@ function bindDepositLogic() {
   });
 
   submitBtn.onclick = async () => {
-    if (submitBtn.disabled) return;
-    submitBtn.disabled = true;
+  if (submitBtn.disabled) return;
+  submitBtn.disabled = true;
 
-    try {
-      const amount = parseFloat(amtInput.value);
-      if (isNaN(amount) || amount < 20) {
-        throw new Error("Minimum deposit is $20");
-      }
-
-      msgEl.textContent = "Creating transaction…";
-
-      const txHash = await sendTonDeposit(amount);
-
-      msgEl.textContent = "Submitting deposit…";
-
-      const res = await fetch(BACKEND_URL + "/deposit/submit", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    initData: tg.initData,     // Telegram auth
-    amount: Number(amount.toFixed(2)),
-    tx_boc: txHash             // TON transaction proof
-  })
-});
-
-      const data = await res.json();
-
-      if (!data.ok) {
-        throw new Error(data.error || "Deposit failed");
-      }
-
-      msgEl.textContent = "✅ Deposit successful!";
-      amtInput.value = "";
-
-      /* 🔥 LIVE WALLET UPDATE */
-if (data.user) {
-  // update UI
-  updateWalletUI(data.user);
-
-  // keep local cache in sync
-  window.currentUserData.balance_musd = data.user.balance_musd;
-  window.currentUserData.balance_mstc = data.user.balance_mstc;
-}
-
-    } catch (err) {
-      msgEl.textContent = err.message || "Deposit failed";
+  try {
+    const amount = parseFloat(amtInput.value);
+    if (isNaN(amount) || amount < 20) {
+      throw new Error("Minimum deposit is $20");
     }
 
-    submitBtn.disabled = false;
-  };
+    // 🔐 Ensure wallet connection
+    if (!isWalletConnected()) {
+      msgEl.textContent = "🔐 Please connect your TON wallet";
+      await connectTonWallet();
+      submitBtn.disabled = false;
+      return;
+    }
+
+    // 💸 Send TON
+    msgEl.textContent = "Confirm payment in wallet…";
+    const txHash = await sendTonDeposit(amount);
+
+    msgEl.textContent = "Submitting deposit…";
+
+    const res = await fetch(BACKEND_URL + "/deposit/submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        initData: tg.initData,
+        amount: Number(amount.toFixed(2)),
+        tx_boc: txHash
+      })
+    });
+
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Deposit failed");
+
+    msgEl.textContent = "✅ Deposit successful!";
+    amtInput.value = "";
+
+  } catch (err) {
+    msgEl.textContent = err.message || "Deposit failed";
+  }
+
+  submitBtn.disabled = false;
+};
+
 } // 
 
 function renderUserHeader(userData) {
