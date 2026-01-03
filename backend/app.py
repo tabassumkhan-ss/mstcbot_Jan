@@ -291,7 +291,7 @@ def distribute_club_bonus(db: SessionLocal, amount: float) -> float:
         distributed_total += per_user
     leftover = round(club_cut - distributed_total, 2)
     if leftover > 0:
-        add_to_company_pool(db, leftover)
+        add_to_company_pool(db, leftover, commit=False)
     return club_cut
 
 COMPANY_USER_ID = -999999999
@@ -1105,6 +1105,7 @@ def debug_simulate_deposit():
 
         became_origin_now = False
 
+        # 🔹 Activation & role
         if amount >= 20:
             if not user.self_activated:
                 user.self_activated = True
@@ -1112,13 +1113,20 @@ def debug_simulate_deposit():
                 user.role = "origin"
                 became_origin_now = True
 
+        # 🔹 User business
         user.total_team_business = float(user.total_team_business or 0) + amount
         db.add(user)
 
+        # 🔹 Team propagation
         propagate_team_business(db, user, amount, became_origin_now)
-        update_rank(user)
-        distribute_club_bonus(db, amount)
 
+        # 🔹 Rank updates
+        update_rank(user)
+
+        # 🔹 CLUB BONUS (ONLY ONCE)
+        club_cut = distribute_club_bonus(db, amount)
+
+        # 🔹 Transaction record
         db.add(Transaction(
             user_id=user.id,
             amount=amount,
@@ -1131,9 +1139,12 @@ def debug_simulate_deposit():
         db.commit()
         db.refresh(user)
 
-        return jsonify(ok=True, user={"id": user.id, "role": user.role})
+        return jsonify(
+            ok=True,
+            user={"id": user.id, "role": user.role},
+            club_cut=club_cut
+        )
 
-    
     except Exception:
         db.rollback()
         current_app.logger.exception("simulate_deposit failed")
@@ -1141,7 +1152,6 @@ def debug_simulate_deposit():
 
     finally:
         db.close()
-
 
  
 @app.route("/debug/user/<int:user_id>")
