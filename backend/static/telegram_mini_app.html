@@ -690,28 +690,26 @@ async function connectTonWallet() {
 }
 
 async function sendTonDeposit(amountUsd) {
-  // 1 TON ≈ test value (you can adjust later)
-  const TON_RATE = 100; // for testing
-  const tonAmount = amount / TON_RATE;
+  const TON_RATE = 100; // TEST RATE: $100 = 1 TON
+  const tonAmount = amountUsd / TON_RATE;
+  const nanoTon = Math.floor(tonAmount * 1e9);
 
-  const nanoTon = Math.floor(tonAmount * 1e9); // TON → nanotons
+  console.log("Sending TON:", tonAmount);
 
   const tx = {
     validUntil: Math.floor(Date.now() / 1000) + 300,
     messages: [
       {
-        address: "0QCaCGBFDP-J2Yxrz1Qwu_lPZ0K4nVv9BrzbZ9_BU5TUAZl4", // your receiving wallet
+        address: "0QCaCGBFDP-J2Yxrz1Qwu_lPZ0K4nVv9BrzbZ9_BU5TUAZl4",
         amount: nanoTon.toString(),
       }
     ]
   };
 
-  // 🔑 THIS opens TONkeeper & asks user to confirm
   const result = await tonConnectUI.sendTransaction(tx);
-
-  // result.boc is your transaction proof
   return result.boc;
 }
+
 
 
   const unsafe = tg ? tg.initDataUnsafe || {} : {};
@@ -899,18 +897,9 @@ function bindRankLogic(userData) {
 
 function bindDepositLogic() {
   const btn = document.getElementById("submitDeposit");
-  const amountInput = document.getElementById("amt");
-
-  console.log("bindDepositLogic:", btn, amountInput);
-
-  if (!btn || !amountInput) {
-    console.error("Deposit UI not ready");
-    return;
-  }
 
   btn.addEventListener("click", async () => {
-    console.log("✅ Submit Deposit clicked");
-
+    const amountInput = document.getElementById("amt");
     const amount = Number(amountInput.value);
 
     if (!amount || amount < 20) {
@@ -922,35 +911,38 @@ function bindDepositLogic() {
     if (!isWalletConnected()) {
       try {
         await tonConnectUI.connectWallet();
-      } catch (e) {
+      } catch {
         alert("Wallet connection cancelled");
         return;
       }
     }
 
-    // 2️⃣ Send TON transaction
     try {
-      const tx = {
-        validUntil: Math.floor(Date.now() / 1000) + 300,
-        messages: [
-          {
-            address: "0QCaCGBFDP-J2Yxrz1Qwu_lPZ0K4nVv9BrzbZ9_BU5TUAZl4",
-            amount: Math.floor(amount * 1e9).toString(), // TEST RATE
-          }
-        ]
-      };
+      // 2️⃣ Send TON (TESTNET)
+      const txBoc = await sendTonDeposit(amount);
 
-      const result = await tonConnectUI.sendTransaction(tx);
+      // 3️⃣ Notify backend
+      const res = await fetch(BACKEND_URL + "/deposit/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          initData: tg.initData,
+          amount,
+          tx_boc: txBoc
+        })
+      });
 
-      console.log("TON tx sent:", result);
+      const data = await res.json();
+      if (!data.ok) {
+        throw new Error(data.error || "Deposit failed");
+      }
 
-      alert("✅ Transaction sent. Backend verification pending.");
-
+      alert("✅ Deposit successful");
       amountInput.value = "";
 
     } catch (err) {
-      console.error("TX failed:", err);
-      alert("Transaction rejected or failed");
+      console.error(err);
+      alert("Transaction failed or rejected");
     }
   });
 }
