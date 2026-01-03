@@ -7,6 +7,7 @@ from urllib.parse import parse_qsl
 from datetime import datetime
 from typing import Optional
 from sqlalchemy import text
+from sqlalchemy import func
 
 from flask import Flask, request, jsonify, send_from_directory, current_app
 from flask_cors import CORS
@@ -1124,14 +1125,6 @@ def debug_simulate_deposit():
         user = db.query(User).filter(User.id == tg_id).first()
         if not user:
             return jsonify(ok=False, error="user_not_found"), 404
-
-        # 🔹 1️⃣ DEDUCT WALLET BALANCE (70% MUSD / 30% MSTC)
-        try:
-            musd_used, mstc_used = deduct_wallet_balance(user, amount)
-        except ValueError as e:
-            db.rollback()
-            return jsonify(ok=False, error=str(e)), 400
-
         became_origin_now = False
 
         # 🔹 2️⃣ ACTIVATE USER IF ELIGIBLE
@@ -1177,10 +1170,6 @@ def debug_simulate_deposit():
                 "role": user.role,
                 "balance_musd": float(user.balance_musd or 0),
                 "balance_mstc": float(user.balance_mstc or 0),
-            },
-            deducted={
-                "musd": musd_used,
-                "mstc": mstc_used,
             },
             club_cut=club_cut
         )

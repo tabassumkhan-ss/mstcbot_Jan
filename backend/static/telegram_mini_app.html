@@ -686,41 +686,29 @@ async function connectTonWallet() {
 }
 
 async function sendTonDeposit(amountUsd) {
+  // 1 TON ≈ test value (you can adjust later)
+  const TON_RATE = 1; // for testing
+  const tonAmount = amountUsd / TON_RATE;
 
-  // === 1️⃣ validate amount ===========================
-  if (!amountUsd || amountUsd < 20) {
-    throw new Error("Minimum deposit is $20");
-  }
+  const nanoTon = Math.floor(tonAmount * 1e9); // TON → nanotons
 
-  // === 2️⃣ ignore real wallet requirement ============
-  // (TONConnect wallet not required in simulator mode)
-  if (!tonConnectUI.wallet?.account?.address) {
-    console.warn("⚠ SIM MODE: Wallet not connected, skipping check");
-  }
+  const tx = {
+    validUntil: Math.floor(Date.now() / 1000) + 300,
+    messages: [
+      {
+        address: "0QCaCGBFDP-J2Yxrz1Qwu_lPZ0K4nVv9BrzbZ9_BU5TUAZl4", // your receiving wallet
+        amount: nanoTon.toString(),
+      }
+    ]
+  };
 
-  // === 3️⃣ simulate wallet open delay ================
-  await new Promise(r => setTimeout(r, 1200));
+  // 🔑 THIS opens TONkeeper & asks user to confirm
+  const result = await tonConnectUI.sendTransaction(tx);
 
-  // === 4️⃣ generate deterministic tx hash ============
-  const fakeHash =
-    "SIMTX-" +
-    Date.now().toString(36).toUpperCase() +
-    "-" +
-    Math.random().toString(36).substring(2, 8).toUpperCase();
-
-  // === 5️⃣ show internally ===========================
-  console.log(
-    "⚡ SIM TON TX CREATED",
-    {
-      hash: fakeHash,
-      usd_amount: amountUsd,
-      user: window.currentUserData?.id || "unknown"
-    }
-  );
-
-  // === 6️⃣ return usable blockchain identifier ========
-  return fakeHash;
+  // result.boc is your transaction proof
+  return result.boc;
 }
+
 
   const unsafe = tg ? tg.initDataUnsafe || {} : {};
   console.log("DEBUG initDataUnsafe:", unsafe);   // <<< IMPORTANT
@@ -943,18 +931,15 @@ function bindDepositLogic() {
 
       msgEl.textContent = "Submitting deposit…";
 
-      const res = await fetch(BACKEND_URL + "/debug/simulate_deposit", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-DEBUG-KEY": "48549630436fd1cb439e62b62e888b6c"
-        },
-        body: JSON.stringify({
-          user_id: window.currentUserData.id,
-          amount: Number(amount.toFixed(2)),
-          tx_musd: txHash
-        })
-      });
+      const res = await fetch(BACKEND_URL + "/deposit/submit", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    initData: tg.initData,     // Telegram auth
+    amount: Number(amount.toFixed(2)),
+    tx_boc: txHash             // TON transaction proof
+  })
+});
 
       const data = await res.json();
 
@@ -981,7 +966,7 @@ if (data.user) {
 
     submitBtn.disabled = false;
   };
-} // ✅ THIS BRACE WAS MISSING
+} // 
 
 function renderUserHeader(userData) {
   const tgUser = Telegram.WebApp?.initDataUnsafe?.user || {};
