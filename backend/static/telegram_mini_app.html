@@ -582,6 +582,39 @@
 
 <script>
 
+document.addEventListener("DOMContentLoaded", () => {
+
+  // 🔧 Browser safety: disable overlays
+  if (!window.Telegram || !window.Telegram.WebApp) {
+    const overlay = document.getElementById("menuOverlay");
+    if (overlay) overlay.style.display = "none";
+
+    const modal = document.getElementById("modal");
+    if (modal) modal.classList.add("hidden");
+
+    console.log("🧪 Browser mode detected — overlays disabled");
+  }
+
+  // ✅ YES button direct handler
+  const yesBtn = document.getElementById("yesBtn");
+  if (yesBtn) {
+    yesBtn.onclick = async () => {
+      console.log("✅ YES clicked (direct handler)");
+
+      const data = await loadActivationStatus();
+      if (data?.exists === true) {
+        renderRegisteredView(
+          data.user.id,
+          data.user.first_name,
+          null,
+          data.user
+        );
+      }
+    };
+  }
+
+});
+
   window.impersonation = {
   active: false,
   user: null
@@ -1103,7 +1136,9 @@ function getDashboardSkeletonHTML() {
     return null;   // ✅ RETURN something
   }
 
-  const initData = tgApp.initData || "";
+  const initData =
+  tgApp?.initData ||
+  "query_id=browser_test&user=%7B%22id%22%3A123456%2C%22first_name%22%3A%22Browser%22%7D";
 
   try {
     const res = await fetch(BACKEND_URL + '/webapp/init', {
