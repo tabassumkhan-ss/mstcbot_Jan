@@ -691,8 +691,8 @@ async function connectTonWallet() {
 
 async function sendTonDeposit(amountUsd) {
   // 1 TON ≈ test value (you can adjust later)
-  const TON_RATE = 1; // for testing
-  const tonAmount = amountUsd / TON_RATE;
+  const TON_RATE = 100; // for testing
+  const tonAmount = amount / TON_RATE;
 
   const nanoTon = Math.floor(tonAmount * 1e9); // TON → nanotons
 
