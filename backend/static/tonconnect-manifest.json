@@ -1,7 +1,7 @@
 {
   "name": "MSTC Test App",
-  "url": "https://mstcbotnew-production.up.railway.app",
-  "iconUrl": "https://mstcbotnew-production.up.railway.app/static/icon.png",
+  "url": "https://mstcbotjan-production.up.railway.app",
+  "iconUrl": "https://mstcbotjan-production.up.railway.app/static/icon.png",
   "termsOfUseUrl": "",
   "privacyPolicyUrl": "",
   "networks": ["testnet"]
