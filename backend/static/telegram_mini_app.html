@@ -898,75 +898,66 @@ function bindRankLogic(userData) {
 
 
 function bindDepositLogic() {
-  const submitBtn = document.getElementById("submitDeposit");
-  const amtInput  = document.getElementById("amt");
-  const msgEl     = document.getElementById("submitMsg");
+  const btn = document.getElementById("submitDeposit");
 
-  if (!submitBtn || !amtInput || !msgEl) {
-    console.warn("Deposit elements not ready");
-    return;
-  }
+  btn.addEventListener("click", async () => {
+    const amountInput = document.getElementById("depositAmount");
+    const amount = Number(amountInput.value);
 
-  amtInput.addEventListener("input", () => {
-    const v = parseFloat(amtInput.value);
-    if (isNaN(v) || v < 20) {
-      submitBtn.disabled = true;
-      msgEl.style.display = "block";
-      msgEl.textContent = "Minimum deposit is $20";
-    } else {
-      submitBtn.disabled = false;
-      msgEl.textContent = "";
-    }
-  });
-
-  submitBtn.onclick = async () => {
-  if (submitBtn.disabled) return;
-  submitBtn.disabled = true;
-
-  try {
-    const amount = parseFloat(amtInput.value);
-    if (isNaN(amount) || amount < 20) {
-      throw new Error("Minimum deposit is $20");
-    }
-
-    // 🔐 Ensure wallet connection
-    if (!isWalletConnected()) {
-      msgEl.textContent = "🔐 Please connect your TON wallet";
-      await connectTonWallet();
-      submitBtn.disabled = false;
+    if (!amount || amount <= 0) {
+      alert("Enter valid amount");
       return;
     }
 
-    // 💸 Send TON
-    msgEl.textContent = "Confirm payment in wallet…";
-    const txHash = await sendTonDeposit(amount);
+    // 🔐 1️⃣ ENSURE WALLET CONNECTED
+    if (!isWalletConnected()) {
+      try {
+        await tonConnectUI.connectWallet();
+      } catch (e) {
+        alert("Wallet connection cancelled");
+        return;
+      }
+    }
 
-    msgEl.textContent = "Submitting deposit…";
+    // 🔐 2️⃣ SEND TRANSACTION
+    try {
+      const tx = {
+        validUntil: Math.floor(Date.now() / 1000) + 300,
+        messages: [
+          {
+            address: "YOUR_RECEIVER_TON_ADDRESS",
+            amount: (amount * 1e9).toString(), // TON → nanoTON
+          }
+        ]
+      };
 
-    const res = await fetch(BACKEND_URL + "/deposit/submit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        initData: tg.initData,
-        amount: Number(amount.toFixed(2)),
-        tx_boc: txHash
-      })
-    });
+      const result = await tonConnectUI.sendTransaction(tx);
 
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || "Deposit failed");
+      // 🔐 3️⃣ SEND TX PROOF TO BACKEND
+      const res = await fetch("/deposit/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          initData: Telegram.WebApp.initData,
+          amount,
+          tx_boc: result.boc
+        })
+      });
 
-    msgEl.textContent = "✅ Deposit successful!";
-    amtInput.value = "";
+      const data = await res.json();
+      if (!data.ok) {
+        throw new Error(data.error || "Deposit failed");
+      }
 
-  } catch (err) {
-    msgEl.textContent = err.message || "Deposit failed";
-  }
+      alert("✅ Deposit successful");
+      amountInput.value = "";
 
-  submitBtn.disabled = false;
-};
-
-} // 
+    } catch (err) {
+      console.error(err);
+      alert("Transaction failed or rejected");
+    }
+  });
+}
 
 function renderUserHeader(userData) {
   const tgUser = Telegram.WebApp?.initDataUnsafe?.user || {};
