@@ -1117,6 +1117,7 @@ def debug_simulate_deposit():
 
         propagate_team_business(db, user, amount, became_origin_now)
         update_rank(user)
+        distribute_club_bonus(db, amount)
 
         db.add(Transaction(
             user_id=user.id,
