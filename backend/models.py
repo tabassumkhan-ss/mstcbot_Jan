@@ -42,6 +42,7 @@ class User(Base):
     balance_musd = Column(Float, default=0.0)
     balance_mstc = Column(Float, default=0.0)
     referrer_id = Column(BigInteger, ForeignKey("users.id"))
+    club_income = Column(Float, default=0.0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     referrer = relationship("User", remote_side=[id])
