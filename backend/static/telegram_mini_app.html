@@ -965,6 +965,16 @@ function bindDepositLogic() {
       msgEl.textContent = "✅ Deposit successful!";
       amtInput.value = "";
 
+      /* 🔥 LIVE WALLET UPDATE */
+if (data.user) {
+  // update UI
+  updateWalletUI(data.user);
+
+  // keep local cache in sync
+  window.currentUserData.balance_musd = data.user.balance_musd;
+  window.currentUserData.balance_mstc = data.user.balance_mstc;
+}
+
     } catch (err) {
       msgEl.textContent = err.message || "Deposit failed";
     }
@@ -1044,6 +1054,8 @@ function initDashboardUI(userData) {
   // 🟢 USER HEADER (avatar, name, id)
   renderUserHeader(userData);
 
+  updateWalletUI(userData);
+
   // 🟢 DEPOSIT
   renderDepositPanel();
   bindDepositLogic();
@@ -1053,6 +1065,8 @@ function initDashboardUI(userData) {
   bindRankLogic(userData);
 
   updateAdminMenuVisibility();
+
+  loadWalletOnStart();
 }
 
 function getDashboardSkeletonHTML() {
@@ -1065,6 +1079,21 @@ function getDashboardSkeletonHTML() {
     <!-- USER HEADER -->
     <div id="userHeader"></div>
 
+    <!-- 💼 WALLET -->
+    <div class="panel" id="walletSection">
+      <h3>💼 Wallet</h3>
+
+      <div class="row">
+        MUSD Balance:
+        <b><span id="balanceMUSD">0.00</span></b>
+      </div>
+
+      <div class="row">
+        MSTC Balance:
+        <b><span id="balanceMSTC">0.00</span></b>
+      </div>
+    </div>
+
     <!-- DEPOSIT -->
     <div id="depositSection"></div>
 
@@ -1072,6 +1101,7 @@ function getDashboardSkeletonHTML() {
     <div id="rankSection"></div>
   `;
 }
+
  
   // expose renderRegisteredView globally
   window.renderRegisteredView = renderRegisteredView;
@@ -1500,6 +1530,42 @@ function stopImpersonation() {
   document.getElementById("impersonationBanner")?.remove();
  
 }
+
+function updateWalletUI(user) {
+  if (!user) return;
+
+  const musdEl = document.getElementById("balanceMUSD");
+  const mstcEl = document.getElementById("balanceMSTC");
+
+  if (musdEl) musdEl.textContent = Number(user.balance_musd || 0).toFixed(2);
+  if (mstcEl) mstcEl.textContent = Number(user.balance_mstc || 0).toFixed(2);
+}
+
+async function loadWalletOnStart() {
+  try {
+    const res = await fetch(BACKEND_URL + "/webapp/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        initData: Telegram.WebApp.initData
+      })
+    });
+
+    const data = await res.json();
+    if (!data.ok) return;
+
+    // 🔹 Update wallet UI
+    updateWalletUI(data.user);
+
+    // 🔹 Sync local cache
+    window.currentUserData.balance_musd = data.user.balance_musd;
+    window.currentUserData.balance_mstc = data.user.balance_mstc;
+
+  } catch (e) {
+    console.warn("Wallet load failed", e);
+  }
+}
+
 
   async function openWallet() {
   const u = window.currentUserData || {};
