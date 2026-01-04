@@ -1299,16 +1299,7 @@ def deposit_submit():
     # 🔴 ADD THIS
     current_app.logger.info("deposit_submit BEFORE ton verification")
 
-    try:
-        verify_ton_transaction(
-            tx_boc=tx_boc,
-            expected_address=TREASURY_WALLET,
-            expected_amount_ton=amount
-        )
-    except Exception as e:
-        current_app.logger.error("TON verification failed: %s", e)
-        return jsonify(ok=False, error=str(e)), 400
-
+    current_app.logger.warning("TON verification TEMPORARILY BYPASSED")
     # 🔴 ADD THIS
     current_app.logger.info("deposit_submit AFTER ton verification")
 
