@@ -1282,8 +1282,8 @@ def debug_transactions(user_id):
 
 @app.route("/deposit/submit", methods=["POST"])
 def deposit_submit():
-    # 🔍 LOG: function entered
     current_app.logger.info("deposit_submit called")
+
     data = request.get_json(silent=True) or {}
 
     try:
@@ -1291,46 +1291,41 @@ def deposit_submit():
         amount = float(data.get("amount"))
         tx_boc = data.get("tx_boc")
     except Exception:
+        current_app.logger.warning("deposit_submit invalid payload")
         return jsonify(ok=False, error="invalid_payload"), 400
 
-    if not tx_boc or not tx_boc.startswith("te6ccg"):
-        return jsonify(ok=False, error="invalid_tx"), 400
+    current_app.logger.info("deposit_submit payload parsed")
 
-    # 🔥 TEMP: treat real TON tx as valid
+    # 🔴 ADD THIS
+    current_app.logger.info("deposit_submit BEFORE ton verification")
+
+    try:
+        verify_ton_transaction(
+            tx_boc=tx_boc,
+            expected_address=TREASURY_WALLET,
+            expected_amount_ton=amount
+        )
+    except Exception as e:
+        current_app.logger.error("TON verification failed: %s", e)
+        return jsonify(ok=False, error=str(e)), 400
+
+    # 🔴 ADD THIS
+    current_app.logger.info("deposit_submit AFTER ton verification")
+
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
             return jsonify(ok=False, error="user_not_found"), 404
 
-        became_origin_now = False
-        if amount >= 20:
-            if not user.self_activated:
-                user.self_activated = True
-            if user.role == "user":
-                user.role = "origin"
-                became_origin_now = True
-
-        user.total_team_business = float(user.total_team_business or 0) + amount
-        propagate_team_business(db, user, amount, became_origin_now)
-        update_rank(user)
-
-        db.add(Transaction(
-            user_id=user.id,
-            amount=amount,
-            currency="TON",
-            type="deposit",
-            external_id=tx_boc[:32],
-            created_at=datetime.utcnow(),
-        ))
-
         db.commit()
+
         current_app.logger.info("deposit_submit returning OK")
         return jsonify(ok=True)
 
     except Exception:
         db.rollback()
-        app.logger.exception("deposit_submit failed")
+        current_app.logger.exception("deposit_submit failed")
         return jsonify(ok=False, error="server_error"), 500
     finally:
         db.close()
