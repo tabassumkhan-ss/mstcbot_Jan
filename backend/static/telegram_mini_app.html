@@ -1052,9 +1052,7 @@ function initDashboardUI(userData) {
   // 🟢 USER HEADER (avatar, name, id)
   renderUserHeader(userData);
 
-  updateWalletUI(userData);
-
-  // 🟢 DEPOSIT
+   // 🟢 DEPOSIT
   renderDepositPanel();
   bindDepositLogic();
 
@@ -1076,21 +1074,6 @@ function getDashboardSkeletonHTML() {
 
     <!-- USER HEADER -->
     <div id="userHeader"></div>
-
-    <!-- 💼 WALLET -->
-    <div class="panel" id="walletSection">
-      <h3>💼 Wallet</h3>
-
-      <div class="row">
-        MUSD Balance:
-        <b><span id="balanceMUSD">0.00</span></b>
-      </div>
-
-      <div class="row">
-        MSTC Balance:
-        <b><span id="balanceMSTC">0.00</span></b>
-      </div>
-    </div>
 
     <!-- DEPOSIT -->
     <div id="depositSection"></div>
