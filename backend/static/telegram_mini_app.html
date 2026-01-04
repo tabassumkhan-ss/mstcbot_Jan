@@ -722,6 +722,48 @@ async function connectTonWallet() {
   }
 }
 
+async function doDeposit() {
+  try {
+    // 1️⃣ Wallet transaction
+    const walletResult = await tonConnectUI.sendTransaction(tx);
+
+    if (!walletResult?.transaction?.boc) {
+      throw new Error("Wallet rejected transaction");
+    }
+
+    // 2️⃣ Backend call (with timeout)
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 15000);
+
+    const res = await fetch("/deposit/submit", {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: tg.initDataUnsafe.user.id,
+        amount: depositAmount,
+        tx_boc: walletResult.transaction.boc
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.ok) {
+      throw new Error(data?.error || "Deposit failed");
+    }
+
+    alert("✅ Deposit successful");
+
+  } catch (err) {
+    if (err.name === "AbortError") {
+      alert("⏳ Server taking too long. Please try again.");
+    } else {
+      alert("❌ Transaction failed: " + err.message);
+    }
+    console.error("Deposit error:", err);
+  }
+}
+
 async function sendTonDeposit(amountUsd) {
   const TON_RATE = 100; // TEST RATE: $100 = 1 TON
   const tonAmount = amountUsd / TON_RATE;

@@ -1282,6 +1282,8 @@ def debug_transactions(user_id):
 
 @app.route("/deposit/submit", methods=["POST"])
 def deposit_submit():
+    # 🔍 LOG: function entered
+    current_app.logger.info("deposit_submit called")
     data = request.get_json(silent=True) or {}
 
     try:
@@ -1323,6 +1325,7 @@ def deposit_submit():
         ))
 
         db.commit()
+        current_app.logger.info("deposit_submit returning OK")
         return jsonify(ok=True)
 
     except Exception:
