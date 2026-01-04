@@ -804,7 +804,7 @@ def bot_start():
         # 🔒 READ ONLY — NO CREATE HERE
         user = (
             db.query(User)
-            .filter(User.telegram_id == int(tg_id))
+            .filter(User.id == int(tg_id))
             .first()
         )
 
@@ -1280,6 +1280,57 @@ def debug_transactions(user_id):
     finally:
         db.close()
 
+@app.route("/deposit/submit", methods=["POST"])
+def deposit_submit():
+    data = request.get_json(silent=True) or {}
+
+    try:
+        user_id = int(data.get("user_id"))
+        amount = float(data.get("amount"))
+        tx_boc = data.get("tx_boc")
+    except Exception:
+        return jsonify(ok=False, error="invalid_payload"), 400
+
+    if not tx_boc or not tx_boc.startswith("te6ccg"):
+        return jsonify(ok=False, error="invalid_tx"), 400
+
+    # 🔥 TEMP: treat real TON tx as valid
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return jsonify(ok=False, error="user_not_found"), 404
+
+        became_origin_now = False
+        if amount >= 20:
+            if not user.self_activated:
+                user.self_activated = True
+            if user.role == "user":
+                user.role = "origin"
+                became_origin_now = True
+
+        user.total_team_business = float(user.total_team_business or 0) + amount
+        propagate_team_business(db, user, amount, became_origin_now)
+        update_rank(user)
+
+        db.add(Transaction(
+            user_id=user.id,
+            amount=amount,
+            currency="TON",
+            type="deposit",
+            external_id=tx_boc[:32],
+            created_at=datetime.utcnow(),
+        ))
+
+        db.commit()
+        return jsonify(ok=True)
+
+    except Exception:
+        db.rollback()
+        app.logger.exception("deposit_submit failed")
+        return jsonify(ok=False, error="server_error"), 500
+    finally:
+        db.close()
  
 @app.route("/webhook", methods=["POST"])
 def telegram_webhook():
