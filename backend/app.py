@@ -1285,6 +1285,7 @@ def deposit_submit():
     current_app.logger.info("deposit_submit called")
 
     data = request.get_json(silent=True) or {}
+    current_app.logger.info("deposit_submit raw data: %s", data)
 
     try:
         user_id = int(data.get("user_id"))
