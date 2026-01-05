@@ -1055,33 +1055,37 @@ function renderUserHeader(userData) {
 
 
 function initDashboardUI(userData) {
-
   // 🟢 USER HEADER (avatar, name, id)
   renderUserHeader(userData);
 
-  // 🟢 SET ADMIN AND CURRENT USER
-  if (userData.role === "admin" || userData.role === "superadmin") {
+  // 🟢 SET ADMIN DATA ONLY IF NOT ALREADY SET
+  if ((userData.role === "admin" || userData.role === "superadmin") && !window.currentAdminData) {
     window.currentAdminData = {
       id: userData.id,
       first_name: userData.first_name,
       role: userData.role
     };
-
-    // Save regular current user (this will be used for impersonation switch)
-    window.currentUserData = { ...window.currentAdminData };
   }
 
-   // 🟢 DEPOSIT
+  // Always set currentUserData for dashboard UI (this may be impersonated user)
+  window.currentUserData = { ...userData };
+
+  // 🟢 DEPOSIT PANEL
   renderDepositPanel();
   bindDepositLogic();
 
-  // 🟢 RANK
+  // 🟢 RANK PANEL
   renderRankPanel(userData);
   bindRankLogic(userData);
 
-  updateAdminMenuVisibility();
+  // 🟢 Side Menu
+  renderSideMenu();
 
+  // 🟢 Load wallet info
   loadWalletOnStart();
+
+  // 🟢 Show impersonation banner if active
+  if (window.impersonation?.active) showImpersonationBanner();
 }
 
 function getDashboardSkeletonHTML() {
@@ -1181,18 +1185,33 @@ function showRegisterScreen() {
 document.addEventListener("DOMContentLoaded", async () => {
   const data = await loadActivationStatus(); // calls /webapp/init
 
-  if (data?.exists === true) {
+  if (data?.exists === true && data.user) {
+
+    // 🔹 IMPORTANT: set admin data immediately
+    if (data.user.role === "admin" || data.user.role === "superadmin") {
+      window.currentAdminData = {
+        id: data.user.id,
+        first_name: data.user.first_name,
+        role: data.user.role
+      };
+      // UI will use the current user data
+      window.currentUserData = { ...data.user };
+    } else {
+      window.currentAdminData = null;
+      window.currentUserData = { ...data.user };
+    }
+
     renderRegisteredView(
       data.user.id,
       data.user.first_name,
       null,
       data.user
     );
+
   } else {
     showRegisterScreen(); // just YES/NO UI
   }
 });
-
 
   
 // ================= MENU EVENT DELEGATION =================
@@ -1293,11 +1312,16 @@ async function openDownlines() {
 
 // Open "All Users" modal
 async function openAdminUsers() {
+  if (!window.currentAdminData) {
+    alert("❌ Admin not detected. Cannot load users.");
+    return;
+  }
+
   try {
     // Show loading modal first
     openModal("Admin • Users", "<div class='mini'>Loading users…</div>");
 
-    // Always use currentAdminData for backend auth
+    // 🔑 Always use currentAdminData for backend authentication
     const res = await fetch(BACKEND_URL + "/admin/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1323,9 +1347,7 @@ async function openAdminUsers() {
 
       return `
         <div class="admin-user-row"
-             data-search="${(u.first_name || "").toLowerCase()}
-                          ${(u.username || "").toLowerCase()}
-                          ${u.id}">
+             data-search="${(u.first_name || "").toLowerCase()} ${(u.username || "").toLowerCase()} ${u.id}">
           <b>${u.first_name || "User"}</b>
           <div class="mini">@${u.username || "—"}</div>
           <div class="mini">
@@ -1338,71 +1360,45 @@ async function openAdminUsers() {
 
           ${
             isSelf
-              ? `<div class="mini" style="margin-top:8px;opacity:.7">
-                   ⚠️ You (cannot modify yourself)
-                 </div>`
+              ? `<div class="mini" style="margin-top:8px;opacity:.7">⚠️ You (cannot modify yourself)</div>`
               : `<div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap">
-                  ${u.role !== "admin" ? `
-                    <button class="btn secondary"
-                      onclick="adminUpdateUser(${u.id}, 'promote')">
-                      🔼 Promote
-                    </button>` : `
-                    <button class="btn alt"
-                      onclick="adminUpdateUser(${u.id}, 'demote')">
-                      🔽 Demote
-                    </button>`}
+                  ${u.role !== "admin" ? `<button class="btn secondary"
+                    onclick="adminUpdateUser(${u.id}, 'promote')">🔼 Promote</button>` 
+                  : `<button class="btn alt"
+                    onclick="adminUpdateUser(${u.id}, 'demote')">🔽 Demote</button>`}
 
-                  ${u.active ? `
-                    <button class="btn alt"
-                      onclick="adminUpdateUser(${u.id}, 'deactivate')">
-                      ⛔ Deactivate
-                    </button>` : `
-                    <button class="btn secondary"
-                      onclick="adminUpdateUser(${u.id}, 'activate')">
-                      ✅ Activate
-                    </button>`}
+                  ${u.active ? `<button class="btn alt"
+                    onclick="adminUpdateUser(${u.id}, 'deactivate')">⛔ Deactivate</button>` 
+                  : `<button class="btn secondary"
+                    onclick="adminUpdateUser(${u.id}, 'activate')">✅ Activate</button>`}
 
                   <button class="btn secondary"
-                    onclick="adminImpersonate(${u.id})">
-                    🕵️ Impersonate
-                  </button>
+                    onclick="adminImpersonate(${u.id})">🕵️ Impersonate</button>
                 </div>`
           }
         </div>
       `;
     }).join("");
 
-    // Render modal
+    // Render modal with search
     openModal("Admin • Users", `
       <div style="margin-bottom:10px">
         <input
           id="adminUserSearch"
           type="text"
           placeholder="Search by name, username, ID…"
-          style="
-            width:100%;
-            padding:10px;
-            border-radius:8px;
-            border:1px solid rgba(255,255,255,.2);
-            background:rgba(255,255,255,.08);
-            color:#fff;
-          "
+          style="width:100%; padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.08); color:#fff;"
         />
       </div>
-
-      <div id="adminUserList">
-        ${rowsHtml}
-      </div>
-
+      <div id="adminUserList">${rowsHtml}</div>
       <div style="margin-top:10px">
         <button class="btn secondary" onclick="closeModal()">⬅ Back</button>
       </div>
     `);
 
-    // Search logic
+    // Search filter logic
     const searchInput = document.getElementById("adminUserSearch");
     const rows = document.querySelectorAll(".admin-user-row");
-
     searchInput.addEventListener("input", () => {
       const q = searchInput.value.toLowerCase().trim();
       rows.forEach(row => {
