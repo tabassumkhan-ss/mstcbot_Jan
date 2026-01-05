@@ -793,25 +793,32 @@ async function sendTonDeposit(amountUsd) {
     const isCreator = total >= 100000;
 
     let current = 'Member';
-    if (role === 'admin' || role === 'superadmin') {
-   current = 'Admin';
-}
-    if (isCreator) current = 'Creator';
-    else if (isVisionary) current = 'Visionary';
-    else if (isAdvisor) current = 'Advisor';
-    else if (isLifeChanger) current = 'Life Changer';
-    else if (isOrigin) current = 'Origin';
 
-    return {
-      isOrigin,
-      isLifeChanger,
-      isAdvisor,
-      isVisionary,
-      isCreator,
-      total,
-      activeOrigins,
-      current
-    };
+if (role === 'admin' || role === 'superadmin') {
+  current = 'Admin';
+} else if (isCreator) {
+  current = 'Creator';
+} else if (isVisionary) {
+  current = 'Visionary';
+} else if (isAdvisor) {
+  current = 'Advisor';
+} else if (isLifeChanger) {
+  current = 'Life Changer';
+} else if (isOrigin) {
+  current = 'Origin';
+}
+
+return {
+  isOrigin,
+  isLifeChanger,
+  isAdvisor,
+  isVisionary,
+  isCreator,
+  total,
+  activeOrigins,
+  current
+};
+
   };
 
    
@@ -1310,7 +1317,7 @@ async function openAdminUsers() {
       <div class="mini">@${u.username || "—"}</div>
 
       <div class="mini">
-        Role: <b>${u.role}</b> ${u.active ? "✅ Active" : "❌ Inactive"}
+        Role: <b>${u.role}</b> ${u.self_activated ? "✅ Active" : "❌ Inactive"}
       </div>
 
       <div class="mini">
@@ -1338,7 +1345,7 @@ async function openAdminUsers() {
                 </button>
               `}
 
-              ${u.active ? `
+              ${u.self_activated ? `
                 <button class="btn alt"
                   onclick="adminUpdateUser(${u.id}, 'deactivate')">
                   ⛔ Deactivate
@@ -1436,11 +1443,16 @@ async function adminUpdateUser(userId, action) {
     const data = await res.json();
 
     if (!data.ok) {
-      alert("Action failed");
+      // ✅ Handle self-modification error
+      if (data.error === "cannot_modify_self") {
+        alert("⚠️ You cannot modify your own account!");
+      } else {
+        alert("Action failed: " + (data.error || "Unknown error"));
+      }
       return;
     }
 
-    // Refresh list
+    // Refresh the admin user list after successful action
     openAdminUsers();
 
   } catch (err) {
@@ -1448,6 +1460,7 @@ async function adminUpdateUser(userId, action) {
     alert("Server error");
   }
 }
+
 
 async function adminImpersonate(userId) {
   if (!confirm("Impersonate this user?\nYou can exit anytime.")) return;

@@ -582,7 +582,6 @@ def admin_update_user():
             "error": "unauthorized"
         }), 401
 
-    
     db = SessionLocal()
     try:
         admin = (
@@ -608,6 +607,10 @@ def admin_update_user():
                 "ok": False,
                 "error": "user_not_found"
             }), 404
+
+        # ❌ Prevent admin from modifying themselves
+        if user.id == admin.id:
+            return jsonify({"ok": False, "error": "cannot_modify_self"}), 400
 
         # -------- ACTIONS --------
         if action == "promote":
