@@ -796,7 +796,7 @@ def bot_start():
         # 🔒 READ ONLY — NO CREATE HERE
         user = (
             db.query(User)
-            .filter(User.telegram_id == int(tg_id))
+            .filter(User.id == int(tg_id))
             .first()
         )
 
@@ -1272,6 +1272,47 @@ def debug_transactions(user_id):
     finally:
         db.close()
 
+@app.route("/deposit/submit", methods=["POST"])
+def deposit_submit():
+    current_app.logger.info("deposit_submit called")
+
+    data = request.get_json(silent=True) or {}
+    current_app.logger.info("deposit_submit raw data: %s", data)
+
+    try:
+        user_id = int(data.get("user_id"))
+        amount = float(data.get("amount"))
+        tx_boc = data.get("tx_boc")
+    except Exception:
+        current_app.logger.warning("deposit_submit invalid payload")
+        return jsonify(ok=False, error="invalid_payload"), 400
+
+    current_app.logger.info("deposit_submit payload parsed")
+
+    # 🔴 ADD THIS
+    current_app.logger.info("deposit_submit BEFORE ton verification")
+
+    current_app.logger.warning("TON verification TEMPORARILY BYPASSED")
+    # 🔴 ADD THIS
+    current_app.logger.info("deposit_submit AFTER ton verification")
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return jsonify(ok=False, error="user_not_found"), 404
+
+        db.commit()
+
+        current_app.logger.info("deposit_submit returning OK")
+        return jsonify(ok=True)
+
+    except Exception:
+        db.rollback()
+        current_app.logger.exception("deposit_submit failed")
+        return jsonify(ok=False, error="server_error"), 500
+    finally:
+        db.close()
  
 @app.route("/webhook", methods=["POST"])
 def telegram_webhook():
