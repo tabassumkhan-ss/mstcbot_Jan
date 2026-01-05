@@ -19,7 +19,6 @@ from sqlalchemy.exc import OperationalError
 # local imports
 from backend.models import Base, engine, SessionLocal, User, Transaction, ReferralEvent
 
-
 # -------------------------
 # Load environment & logging
 # -------------------------
@@ -64,7 +63,6 @@ def debug_create_user():
     finally:
         db.close()
 
-
 @app.route("/health")
 def health():
     try:
@@ -91,7 +89,6 @@ try:
         app.logger.info("Flask DB URL: %s", db_url)
 except Exception:
     app.logger.exception("Could not read engine.url")
-
 
 app.logger.info("Flask CWD: %s", os.getcwd())
 app.logger.info("Flask DB URL: %s", engine.url)
@@ -266,7 +263,6 @@ def deduct_wallet_balance(user: User, amount: float):
 
     return musd_cut, mstc_cut
 
-
 def propagate_team_business(db: SessionLocal, user: User, amount: float, became_origin_now: bool):
     visited = set()
     current = user
@@ -314,7 +310,6 @@ def distribute_club_bonus(db: SessionLocal, amount: float) -> float:
         add_to_company_pool(db, leftover, commit=True)   # 🔥 COMMIT REQUIRED
 
     return club_cut
-
 
 COMPANY_USER_ID = -999999999
 
@@ -389,7 +384,6 @@ def webapp_me():
     finally:
         db.close()
 
-
 @app.route("/webapp/init", methods=["POST"])
 def webapp_init():
     data = request.get_json(silent=True) or {}
@@ -458,7 +452,6 @@ def webapp_init():
         db.close()
 
 
-
 from sqlalchemy.exc import OperationalError
 
 @app.route("/webapp/user", methods=["POST"])
@@ -499,7 +492,6 @@ def webapp_user():
 
     finally:
         db.close()
-
 
 @app.route("/admin/users", methods=["POST"])
 def admin_users():
@@ -582,6 +574,7 @@ def admin_update_user():
             "error": "unauthorized"
         }), 401
 
+    
     db = SessionLocal()
     try:
         admin = (
@@ -607,10 +600,6 @@ def admin_update_user():
                 "ok": False,
                 "error": "user_not_found"
             }), 404
-
-        # ❌ Prevent admin from modifying themselves
-        if user.id == admin.id:
-            return jsonify({"ok": False, "error": "cannot_modify_self"}), 400
 
         # -------- ACTIONS --------
         if action == "promote":
@@ -807,7 +796,7 @@ def bot_start():
         # 🔒 READ ONLY — NO CREATE HERE
         user = (
             db.query(User)
-            .filter(User.id == int(tg_id))
+            .filter(User.telegram_id == int(tg_id))
             .first()
         )
 
@@ -1283,47 +1272,6 @@ def debug_transactions(user_id):
     finally:
         db.close()
 
-@app.route("/deposit/submit", methods=["POST"])
-def deposit_submit():
-    current_app.logger.info("deposit_submit called")
-
-    data = request.get_json(silent=True) or {}
-    current_app.logger.info("deposit_submit raw data: %s", data)
-
-    try:
-        user_id = int(data.get("user_id"))
-        amount = float(data.get("amount"))
-        tx_boc = data.get("tx_boc")
-    except Exception:
-        current_app.logger.warning("deposit_submit invalid payload")
-        return jsonify(ok=False, error="invalid_payload"), 400
-
-    current_app.logger.info("deposit_submit payload parsed")
-
-    # 🔴 ADD THIS
-    current_app.logger.info("deposit_submit BEFORE ton verification")
-
-    current_app.logger.warning("TON verification TEMPORARILY BYPASSED")
-    # 🔴 ADD THIS
-    current_app.logger.info("deposit_submit AFTER ton verification")
-
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
-            return jsonify(ok=False, error="user_not_found"), 404
-
-        db.commit()
-
-        current_app.logger.info("deposit_submit returning OK")
-        return jsonify(ok=True)
-
-    except Exception:
-        db.rollback()
-        current_app.logger.exception("deposit_submit failed")
-        return jsonify(ok=False, error="server_error"), 500
-    finally:
-        db.close()
  
 @app.route("/webhook", methods=["POST"])
 def telegram_webhook():
@@ -1343,5 +1291,6 @@ def telegram_webhook():
         app.logger.exception("handle_command failed")
 
     return response, 200
+
 
 

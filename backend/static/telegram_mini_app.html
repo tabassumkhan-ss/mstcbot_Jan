@@ -582,39 +582,6 @@
 
 <script>
 
-document.addEventListener("DOMContentLoaded", () => {
-
-  // 🔧 Browser safety: disable overlays
-  if (!window.Telegram || !window.Telegram.WebApp) {
-    const overlay = document.getElementById("menuOverlay");
-    if (overlay) overlay.style.display = "none";
-
-    const modal = document.getElementById("modal");
-    if (modal) modal.classList.add("hidden");
-
-    console.log("🧪 Browser mode detected — overlays disabled");
-  }
-
-  // ✅ YES button direct handler
-  const yesBtn = document.getElementById("yesBtn");
-  if (yesBtn) {
-    yesBtn.onclick = async () => {
-      console.log("✅ YES clicked (direct handler)");
-
-      const data = await loadActivationStatus();
-      if (data?.exists === true) {
-        renderRegisteredView(
-          data.user.id,
-          data.user.first_name,
-          null,
-          data.user
-        );
-      }
-    };
-  }
-
-});
-
   window.impersonation = {
   active: false,
   user: null
@@ -663,7 +630,6 @@ function isWalletConnected() {
 
 const TREASURY_TON_ADDRESS =
   "UQAZGsz5gaOVtAK67pITWUMUMYNMjccCSbMC5sAMx2say10K";
-
 
  let lastSavedWallet = null;
 
@@ -744,7 +710,6 @@ async function sendTonDeposit(amountUsd) {
 }
 
 
-
   const unsafe = tg ? tg.initDataUnsafe || {} : {};
   console.log("DEBUG initDataUnsafe:", unsafe);   // <<< IMPORTANT
 
@@ -793,32 +758,25 @@ async function sendTonDeposit(amountUsd) {
     const isCreator = total >= 100000;
 
     let current = 'Member';
-
-if (role === 'admin' || role === 'superadmin') {
-  current = 'Admin';
-} else if (isCreator) {
-  current = 'Creator';
-} else if (isVisionary) {
-  current = 'Visionary';
-} else if (isAdvisor) {
-  current = 'Advisor';
-} else if (isLifeChanger) {
-  current = 'Life Changer';
-} else if (isOrigin) {
-  current = 'Origin';
+    if (role === 'admin' || role === 'superadmin') {
+   current = 'Admin';
 }
+    if (isCreator) current = 'Creator';
+    else if (isVisionary) current = 'Visionary';
+    else if (isAdvisor) current = 'Advisor';
+    else if (isLifeChanger) current = 'Life Changer';
+    else if (isOrigin) current = 'Origin';
 
-return {
-  isOrigin,
-  isLifeChanger,
-  isAdvisor,
-  isVisionary,
-  isCreator,
-  total,
-  activeOrigins,
-  current
-};
-
+    return {
+      isOrigin,
+      isLifeChanger,
+      isAdvisor,
+      isVisionary,
+      isCreator,
+      total,
+      activeOrigins,
+      current
+    };
   };
 
    
@@ -882,7 +840,6 @@ function renderRankPanel(userData) {
   `;
 }
 
-
 function bindRankLogic(userData) {
   const details = document.getElementById("rankDetails");
   if (!details) return;
@@ -934,7 +891,6 @@ function bindRankLogic(userData) {
   });
 }
 
-
 function bindDepositLogic() {
   const btn = document.getElementById("submitDeposit");
 
@@ -966,10 +922,10 @@ function bindDepositLogic() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-  user_id: tg.initDataUnsafe.user.id, // 🔴 REQUIRED
-  amount: Number(amount),
-  tx_boc: txBoc
-})
+          initData: tg.initData,
+          amount,
+          tx_boc: txBoc
+        })
       });
 
       const data = await res.json();
@@ -986,7 +942,6 @@ function bindDepositLogic() {
     }
   });
 }
-
 
 function renderUserHeader(userData) {
   const tgUser = Telegram.WebApp?.initDataUnsafe?.user || {};
@@ -1053,39 +1008,24 @@ function renderUserHeader(userData) {
   });
 }
 
-
 function initDashboardUI(userData) {
+
   // 🟢 USER HEADER (avatar, name, id)
   renderUserHeader(userData);
 
-  // 🟢 SET ADMIN DATA ONLY IF NOT ALREADY SET
-  if ((userData.role === "admin" || userData.role === "superadmin") && !window.currentAdminData) {
-    window.currentAdminData = {
-      id: userData.id,
-      first_name: userData.first_name,
-      role: userData.role
-    };
-  }
+  updateWalletUI(userData);
 
-  // Always set currentUserData for dashboard UI (this may be impersonated user)
-  window.currentUserData = { ...userData };
-
-  // 🟢 DEPOSIT PANEL
+  // 🟢 DEPOSIT
   renderDepositPanel();
   bindDepositLogic();
 
-  // 🟢 RANK PANEL
+  // 🟢 RANK
   renderRankPanel(userData);
   bindRankLogic(userData);
 
-  // 🟢 Side Menu
-  renderSideMenu();
+  updateAdminMenuVisibility();
 
-  // 🟢 Load wallet info
   loadWalletOnStart();
-
-  // 🟢 Show impersonation banner if active
-  if (window.impersonation?.active) showImpersonationBanner();
 }
 
 function getDashboardSkeletonHTML() {
@@ -1097,6 +1037,21 @@ function getDashboardSkeletonHTML() {
 
     <!-- USER HEADER -->
     <div id="userHeader"></div>
+
+    <!-- 💼 WALLET -->
+    <div class="panel" id="walletSection">
+      <h3>💼 Wallet</h3>
+
+      <div class="row">
+        MUSD Balance:
+        <b><span id="balanceMUSD">0.00</span></b>
+      </div>
+
+      <div class="row">
+        MSTC Balance:
+        <b><span id="balanceMSTC">0.00</span></b>
+      </div>
+    </div>
 
     <!-- DEPOSIT -->
     <div id="depositSection"></div>
@@ -1142,9 +1097,7 @@ function getDashboardSkeletonHTML() {
     return null;   // ✅ RETURN something
   }
 
-  const initData =
-  tgApp?.initData ||
-  "query_id=browser_test&user=%7B%22id%22%3A123456%2C%22first_name%22%3A%22Browser%22%7D";
+  const initData = tgApp.initData || "";
 
   try {
     const res = await fetch(BACKEND_URL + '/webapp/init', {
@@ -1185,29 +1138,13 @@ function showRegisterScreen() {
 document.addEventListener("DOMContentLoaded", async () => {
   const data = await loadActivationStatus(); // calls /webapp/init
 
-  if (data?.exists === true && data.user) {
-
-    // 🔹 IMPORTANT: set admin data immediately
-    if (data.user.role === "admin" || data.user.role === "superadmin") {
-      window.currentAdminData = {
-        id: data.user.id,
-        first_name: data.user.first_name,
-        role: data.user.role
-      };
-      // UI will use the current user data
-      window.currentUserData = { ...data.user };
-    } else {
-      window.currentAdminData = null;
-      window.currentUserData = { ...data.user };
-    }
-
+  if (data?.exists === true) {
     renderRegisteredView(
       data.user.id,
       data.user.first_name,
       null,
       data.user
     );
-
   } else {
     showRegisterScreen(); // just YES/NO UI
   }
@@ -1308,24 +1245,14 @@ async function openDownlines() {
   );
 }
 
-// ==================== ADMIN DASHBOARD LOGIC ====================
-
-// Open "All Users" modal
 async function openAdminUsers() {
-  if (!window.currentAdminData) {
-    alert("❌ Admin not detected. Cannot load users.");
-    return;
-  }
-
   try {
-    // Show loading modal first
     openModal("Admin • Users", "<div class='mini'>Loading users…</div>");
 
-    // 🔑 Always use currentAdminData for backend authentication
     const res = await fetch(BACKEND_URL + "/admin/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ initData: window.currentAdminData })
+      body: JSON.stringify({ initData: tg.initData })
     });
 
     const data = await res.json();
@@ -1336,71 +1263,118 @@ async function openAdminUsers() {
     }
 
     const users = data.users || [];
+
     if (!users.length) {
       openModal("Admin • Users", "<div>No users found</div>");
       return;
     }
 
-    // Build user rows
+    // 🔹 Build user rows
     const rowsHtml = users.map(u => {
-      const isSelf = u.id === window.currentAdminData.id;
 
-      return `
-        <div class="admin-user-row"
-             data-search="${(u.first_name || "").toLowerCase()} ${(u.username || "").toLowerCase()} ${u.id}">
-          <b>${u.first_name || "User"}</b>
-          <div class="mini">@${u.username || "—"}</div>
-          <div class="mini">
-            Role: <b>${u.role}</b> ${u.active ? "✅ Active" : "❌ Inactive"}
-          </div>
-          <div class="mini">
-            MUSD: ${u.balance_musd} | MSTC: ${u.balance_mstc}
-          </div>
-          <div class="mini">ID: ${u.id}</div>
+  // 🔒 Prevent self-modification
+  const isSelf = u.id === window.currentUserData?.id;
 
-          ${
-            isSelf
-              ? `<div class="mini" style="margin-top:8px;opacity:.7">⚠️ You (cannot modify yourself)</div>`
-              : `<div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap">
-                  ${u.role !== "admin" ? `<button class="btn secondary"
-                    onclick="adminUpdateUser(${u.id}, 'promote')">🔼 Promote</button>` 
-                  : `<button class="btn alt"
-                    onclick="adminUpdateUser(${u.id}, 'demote')">🔽 Demote</button>`}
+  return `
+    <div class="admin-user-row"
+         data-search="${(u.first_name || "").toLowerCase()}
+                      ${(u.username || "").toLowerCase()}
+                      ${u.id}">
 
-                  ${u.active ? `<button class="btn alt"
-                    onclick="adminUpdateUser(${u.id}, 'deactivate')">⛔ Deactivate</button>` 
-                  : `<button class="btn secondary"
-                    onclick="adminUpdateUser(${u.id}, 'activate')">✅ Activate</button>`}
+      <b>${u.first_name || "User"}</b>
+      <div class="mini">@${u.username || "—"}</div>
 
-                  <button class="btn secondary"
-                    onclick="adminImpersonate(${u.id})">🕵️ Impersonate</button>
-                </div>`
-          }
-        </div>
-      `;
-    }).join("");
+      <div class="mini">
+        Role: <b>${u.role}</b> ${u.active ? "✅ Active" : "❌ Inactive"}
+      </div>
 
-    // Render modal with search
+      <div class="mini">
+        MUSD: ${u.balance_musd} | MSTC: ${u.balance_mstc}
+      </div>
+
+      <div class="mini">ID: ${u.id}</div>
+
+      ${
+        isSelf
+          ? `<div class="mini" style="margin-top:8px;opacity:.7">
+               ⚠️ You (cannot modify yourself)
+             </div>`
+          : `
+            <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap">
+              ${u.role !== "admin" ? `
+                <button class="btn secondary"
+                  onclick="adminUpdateUser(${u.id}, 'promote')">
+                  🔼 Promote
+                </button>
+              ` : `
+                <button class="btn alt"
+                  onclick="adminUpdateUser(${u.id}, 'demote')">
+                  🔽 Demote
+                </button>
+              `}
+
+              ${u.active ? `
+                <button class="btn alt"
+                  onclick="adminUpdateUser(${u.id}, 'deactivate')">
+                  ⛔ Deactivate
+                </button>
+              ` : `
+                <button class="btn secondary"
+                  onclick="adminUpdateUser(${u.id}, 'activate')">
+                  ✅ Activate
+                </button>
+              `}
+            </div>
+          `
+      }
+
+    </div>
+  `;
+}).join("");
+
+    // 🔹 Modal content
     openModal("Admin • Users", `
       <div style="margin-bottom:10px">
         <input
           id="adminUserSearch"
           type="text"
           placeholder="Search by name, username, ID…"
-          style="width:100%; padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.08); color:#fff;"
+          style="
+            width:100%;
+            padding:10px;
+            border-radius:8px;
+            border:1px solid rgba(255,255,255,.2);
+            background:rgba(255,255,255,.08);
+            color:#fff;
+          "
         />
       </div>
-      <div id="adminUserList">${rowsHtml}</div>
+
+      <div id="adminUserList">
+        ${rowsHtml}
+      </div>
+
       <div style="margin-top:10px">
         <button class="btn secondary" onclick="closeModal()">⬅ Back</button>
       </div>
     `);
 
-    // Search filter logic
+    // ================= MENU WIRES =================
+const menuBtn = document.getElementById("menuBtn");
+const closeBtn = document.getElementById("closeMenu");
+const overlay = document.getElementById("menuOverlay");
+
+menuBtn && menuBtn.addEventListener("click", openMenu);
+closeBtn && closeBtn.addEventListener("click", closeMenu);
+overlay && overlay.addEventListener("click", closeMenu);
+
+    // 🔍 Search logic
     const searchInput = document.getElementById("adminUserSearch");
     const rows = document.querySelectorAll(".admin-user-row");
+
     searchInput.addEventListener("input", () => {
       const q = searchInput.value.toLowerCase().trim();
+
       rows.forEach(row => {
         const hay = row.dataset.search;
         row.style.display = hay.includes(q) ? "" : "none";
@@ -1412,8 +1386,6 @@ async function openAdminUsers() {
     openModal("Admin Error", "⚠️ Failed to load users");
   }
 }
-
-// ==================== USER ACTIONS ====================
 
 async function adminUpdateUser(userId, action) {
   const confirmMsg = {
@@ -1430,15 +1402,16 @@ async function adminUpdateUser(userId, action) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        initData: window.currentAdminData, // 🔑 always admin for auth
+        initData: tg.initData,
         user_id: userId,
         action
       })
     });
 
     const data = await res.json();
+
     if (!data.ok) {
-      alert(data.error || "Action failed");
+      alert("Action failed");
       return;
     }
 
@@ -1451,69 +1424,51 @@ async function adminUpdateUser(userId, action) {
   }
 }
 
-// ==================== IMPERSONATION ====================
-
 async function adminImpersonate(userId) {
   if (!confirm("Impersonate this user?\nYou can exit anytime.")) return;
 
-  try {
-    const res = await fetch(BACKEND_URL + "/admin/impersonate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        initData: window.currentAdminData, // 🔑 auth as admin
-        user_id: userId
-      })
-    });
+  const res = await fetch(BACKEND_URL + "/admin/impersonate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      initData: tg.initData,
+      user_id: userId
+    })
+  });
 
-    const data = await res.json();
-    if (!data.ok) {
-      alert(data.error || "Impersonation failed");
-      return;
-    }
-
-    // Set impersonated user
-    window.impersonation = {
-      active: true,
-      user: data.impersonated_user
-    };
-
-    // Update dashboard UI
-    window.currentUserData = { ...data.impersonated_user };
-    renderUserHeader(window.currentUserData);
-
-    closeModal();
-    showImpersonationBanner();
-
-  } catch (err) {
-    console.error("adminImpersonate error", err);
-    alert("Server error");
+  const d = await res.json();
+  if (!d.ok) {
+    alert("Impersonation failed");
+    return;
   }
+
+  window.impersonation.active = true;
+  window.impersonation.user = d.impersonated_user;
+
+  closeModal();
+ 
+  showImpersonationBanner();
 }
 
 function showImpersonationBanner() {
-  if (!window.impersonation?.active) return;
+  if (!window.impersonation.active) return;
 
-  let banner = document.getElementById("impersonationBanner");
-  if (!banner) {
-    banner = document.createElement("div");
-    banner.id = "impersonationBanner";
-    banner.style.cssText = `
-      position:fixed;
-      bottom:0;
-      left:0;
-      right:0;
-      background:#b71c1c;
-      color:#fff;
-      padding:10px;
-      font-size:14px;
-      z-index:3000;
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-    `;
-    document.body.appendChild(banner);
-  }
+  const banner = document.createElement("div");
+  banner.id = "impersonationBanner";
+  banner.style.cssText = `
+    position:fixed;
+    bottom:0;
+    left:0;
+    right:0;
+    background:#b71c1c;
+    color:#fff;
+    padding:10px;
+    font-size:14px;
+    z-index:3000;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  `;
 
   banner.innerHTML = `
     <span>🕵️ Impersonating user: ${window.impersonation.user.first_name}</span>
@@ -1522,19 +1477,17 @@ function showImpersonationBanner() {
       Exit
     </button>
   `;
+
+  document.body.appendChild(banner);
 }
 
 function stopImpersonation() {
   window.impersonation.active = false;
   window.impersonation.user = null;
 
-  // Restore currentUserData to real admin
-  window.currentUserData = { ...window.currentAdminData };
-  renderUserHeader(window.currentUserData);
-
   document.getElementById("impersonationBanner")?.remove();
+ 
 }
-
 
 function updateWalletUI(user) {
   if (!user) return;
@@ -1571,7 +1524,6 @@ async function loadWalletOnStart() {
   }
 }
 
-
   async function openWallet() {
   const u = window.currentUserData || {};
   openModal("Wallet", `
@@ -1580,107 +1532,9 @@ async function loadWalletOnStart() {
   `);
 }
 
-// ==================== DASHBOARD STATS ====================
-
-async function openAdminStats() {
-  try {
-    // Use currentUserData for UI stats
-    const userId = window.currentUserData.id;
-
-    // Fetch stats from backend
-    const res = await fetch(`${BACKEND_URL}/user/stats`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        initData: window.currentAdminData, // 🔑 always admin for auth
-        user_id: userId
-      })
-    });
-
-    const data = await res.json();
-    if (!data.ok) {
-      console.error("Stats error:", data.error);
-      return;
-    }
-
-    // Render stats in dashboard
-    renderUserStats(data.stats);
-
-    // Update impersonation banner if active
-    if (window.impersonation?.active) showImpersonationBanner();
-
-  } catch (err) {
-    console.error("openAdminStats error", err);
-  }
+function openAdminStats() {
+  openModal("Admin Stats", "Coming soon…");
 }
-
-// Render user stats in dashboard UI
-function renderUserStats(stats) {
-  const container = document.getElementById("dashboardStats");
-  if (!container) return;
-
-  container.innerHTML = `
-    <div class="stat-card">
-      <h3>MUSD Balance</h3>
-      <p>${stats.balance_musd}</p>
-    </div>
-    <div class="stat-card">
-      <h3>MSTC Balance</h3>
-      <p>${stats.balance_mstc}</p>
-    </div>
-    <div class="stat-card">
-      <h3>Role</h3>
-      <p>${window.currentUserData.role}</p>
-    </div>
-    <div class="stat-card">
-      <h3>Active</h3>
-      <p>${window.currentUserData.active ? "✅ Yes" : "❌ No"}</p>
-    </div>
-  `;
-}
-
-// ==================== SIDE MENU ====================
-
-function renderSideMenu() {
-  const sideMenu = document.getElementById("sideMenu");
-  if (!sideMenu) return;
-
-  sideMenu.innerHTML = `
-    <div class="menu-header">
-      <b>${window.currentUserData.first_name}</b>
-      ${window.impersonation?.active ? `<span style="color:#ffb74d; font-size:12px">🕵️ Impersonating</span>` : ""}
-    </div>
-    <ul>
-      <li onclick="openAdminStats()">Dashboard</li>
-      <li onclick="openAdminUsers()">All Users</li>
-      <li onclick="openTransactions()">Transactions</li>
-      <li onclick="openSettings()">Settings</li>
-      ${window.impersonation?.active ? `
-        <li>
-          <button class="btn alt small" onclick="stopImpersonation()">
-            Exit Impersonation
-          </button>
-        </li>` : ""}
-    </ul>
-  `;
-}
-
-// ==================== INITIALIZATION ====================
-
-function initAdminDashboard() {
-  // Render side menu for currentUserData
-  renderSideMenu();
-
-  // Load dashboard stats
-  openAdminStats();
-
-  // Show impersonation banner if needed
-  if (window.impersonation?.active) showImpersonationBanner();
-}
-
-// Call this on page load
-initAdminDashboard();
-
 
 function updateAdminMenuVisibility() {
   const adminMenu = document.getElementById("adminMenu");
@@ -1791,7 +1645,6 @@ document.addEventListener("click", async (e) => {
   yesBtn.disabled = false;
 });
 
-
 </script> 
 <!-- 🔹 Side Menu -->
 <div id="sideMenu" class="side-menu">
@@ -1822,5 +1675,6 @@ document.addEventListener("click", async (e) => {
       
 </body>
 </html>
+
 
 
