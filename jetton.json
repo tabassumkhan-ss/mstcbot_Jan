@@ -1,6 +1,7 @@
 {
-  "name": "My Jetton",
+  "name": "MSTBlockchain",
   "symbol": "MST",
-  "description": "My first Jetton on TON Testnet",
-  "decimals": 9,
-  }
+  "description": "MSTBlockchain official jetton on TON",
+  "image": "https://raw.githubusercontent.com/tabassumkhan-ss/mstcbot_Jan/main/logo.png",
+  "decimals": 9
+}
