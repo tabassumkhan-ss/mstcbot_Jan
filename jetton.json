@@ -2,6 +2,6 @@
   "name": "MSTBlockchain",
   "symbol": "MST",
   "description": "MSTBlockchain official jetton on TON",
-  "image": "https://raw.githubusercontent.com/tabassumkhan-ss/mstcbot_Jan/main/logo.png",
+  "image": "https://github.com/tabassumkhan-ss/mstcbot_Jan/blob/main/Botlogo.png",
   "decimals": 9
 }
