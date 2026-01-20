@@ -3,6 +3,7 @@ import logging
 import traceback
 import json
 import time
+import base64
 from urllib.parse import parse_qsl
 from datetime import datetime
 from typing import Optional
@@ -22,15 +23,86 @@ from backend.models import Base, engine, SessionLocal, User, Transaction, Referr
 # -------------------------
 # Load environment & logging
 # -------------------------
-# Load .env
 load_dotenv()
 
-# Configure logging FIRST
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+# -------------------------
+# TON configuration
+# -------------------------
+
+TONCENTER_API = "https://toncenter.com/api/v2"
+TONCENTER_API_KEY = os.getenv("TONCENTER_API_KEY")
+TON_COMPANY_WALLET = os.getenv("TON_COMPANY_WALLET")
+
+if not TONCENTER_API_KEY:
+    logger.warning("TONCENTER_API_KEY is NOT set")
+
+if not TON_COMPANY_WALLET:
+    logger.warning("TON_COMPANY_WALLET is NOT set")
+
+
+def ton_api(method: str, params: dict):
+    headers = {
+        "X-API-Key": TONCENTER_API_KEY
+    }
+    r = requests.get(
+        f"{TONCENTER_API}/{method}",
+        params=params,
+        headers=headers,
+        timeout=15
+    )
+    r.raise_for_status()
+    return r.json()
+
+def verify_ton_tx_by_hash(tx_hash: str, expected_amount_ton: float) -> bool:
+    """
+    Verifies TON payment by transaction hash.
+
+    Checks:
+    - tx exists in company wallet history
+    - tx has incoming message
+    - value >= expected_amount_ton
+    """
+
+    if not TONCENTER_API_KEY or not TON_COMPANY_WALLET:
+        raise RuntimeError("TON env vars not set")
+
+    # Convert expected amount to nanoTON (integer-safe)
+    expected_nano = int(expected_amount_ton * 1e9)
+
+    txs = ton_api("getTransactions", {
+        "account": TON_COMPANY_WALLET,
+        "limit": 50
+    })
+
+    for tx in txs.get("result", []):
+        tx_id = tx.get("transaction_id", {}).get("hash")
+        if tx_id != tx_hash:
+            continue
+
+        in_msg = tx.get("in_msg")
+        if not in_msg:
+            return False
+
+        value_nano = int(in_msg.get("value", 0))
+
+        # Must be incoming and sufficient value
+        if value_nano >= expected_nano:
+            return True
+
+        return False
+
+    return False
+
+ENV = os.getenv("ENV", "dev").strip().lower()
+DEBUG_MODE = ENV != "prod"
+
+logger.info("ENV=%s | DEBUG_MODE=%s", ENV, DEBUG_MODE)
 
 # Now it is safe to log
 logger.info(
@@ -43,13 +115,66 @@ logger.info(
 app = Flask(__name__)
 CORS(app)
 
+def check_debug_key():
+    """
+    Robust check for debug key. Accept header variants, query param 'debug_key' or 'key',
+    and strip whitespace before comparing.
+    """
+    expected = current_app.config.get("DEBUG_KEY") or os.getenv("DEBUG_KEY")
+    if not expected:
+        current_app.logger.warning("check_debug_key: DEBUG_KEY not set in config or env")
+        return False
+
+    expected_norm = str(expected).strip()
+
+    # try common header names
+    for k in ("X-DEBUG-KEY", "X-Debug-Key", "x-debug-key"):
+        val = request.headers.get(k)
+        if val and str(val).strip() == expected_norm:
+            return True
+
+    # fallback: scan headers that contain both 'debug' and 'key'
+    for hk, hv in request.headers.items():
+        if "debug" in hk.lower() and "key" in hk.lower():
+            if str(hv).strip() == expected_norm:
+                return True
+
+    # also accept query params for convenience
+    for param in ("debug_key", "key"):
+        q = request.args.get(param)
+        if q and str(q).strip() == expected_norm:
+            return True
+
+    return False
+
+from functools import wraps
+
+def debug_only(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not DEBUG_MODE:
+            return jsonify(ok=False), 404
+        if not check_debug_key():
+            return jsonify(ok=False, error="invalid_debug_key"), 401
+        return fn(*args, **kwargs)
+    return wrapper
+
+
 @app.route("/debug/create_user", methods=["POST"])
+@debug_only
 def debug_create_user():
-    data = request.get_json() or {}
+
+    data = request.get_json(silent=True) or {}
+
+    try:
+        user_id = int(data["id"])
+    except Exception:
+        return jsonify(ok=False, error="invalid_user_id"), 400
+
     db = SessionLocal()
     try:
         user = User(
-            id=data["id"],
+            id=user_id,
             first_name=data.get("first_name"),
             username=data.get("username"),
             referrer_id=data.get("referrer_id")
@@ -57,11 +182,14 @@ def debug_create_user():
         db.add(user)
         db.commit()
         return jsonify(ok=True)
+
     except Exception as e:
         db.rollback()
         return jsonify(ok=False, error=str(e)), 400
+
     finally:
         db.close()
+
 
 @app.route("/health")
 def health():
@@ -96,6 +224,16 @@ app.logger.info("Flask DB URL: %s", engine.url)
 # -------------------------
 # Helpers
 # -------------------------
+
+def split_deposit_amount(amount_ton: float):
+    """
+    Converts TON deposit into internal balances.
+    """
+    musd = round(amount_ton * 0.70, 6)
+    mstc = round(amount_ton * 0.30, 6)
+    return musd, mstc
+
+
 def get_or_create_user(db, tg_user: dict):
     """
     Create user if not exists.
@@ -125,7 +263,9 @@ def get_or_create_user(db, tg_user: dict):
     return user
 
 @app.route("/debug/routes", methods=["GET"])
+@debug_only
 def debug_routes():
+    
     routes = []
     for r in app.url_map.iter_rules():
         routes.append({
@@ -135,37 +275,6 @@ def debug_routes():
         })
     return jsonify(ok=True, routes=routes)
 
-def check_debug_key():
-    """
-    Robust check for debug key. Accept header variants, query param 'debug_key' or 'key',
-    and strip whitespace before comparing.
-    """
-    expected = current_app.config.get("DEBUG_KEY") or os.getenv("DEBUG_KEY")
-    if not expected:
-        current_app.logger.warning("check_debug_key: DEBUG_KEY not set in config or env")
-        return False
-
-    expected_norm = str(expected).strip()
-
-    # try common header names
-    for k in ("X-DEBUG-KEY", "X-Debug-Key", "x-debug-key"):
-        val = request.headers.get(k)
-        if val and str(val).strip() == expected_norm:
-            return True
-
-    # fallback: scan headers that contain both 'debug' and 'key'
-    for hk, hv in request.headers.items():
-        if "debug" in hk.lower() and "key" in hk.lower():
-            if str(hv).strip() == expected_norm:
-                return True
-
-    # also accept query params for convenience
-    for param in ("debug_key", "key"):
-        q = request.args.get(param)
-        if q and str(q).strip() == expected_norm:
-            return True
-
-    return False
 
 def get_ref_from_payload(data: dict) -> Optional[int]:
     ref = data.get("ref")
@@ -451,8 +560,6 @@ def webapp_init():
     finally:
         db.close()
 
-
-from sqlalchemy.exc import OperationalError
 
 @app.route("/webapp/user", methods=["POST"])
 def webapp_user():
@@ -913,7 +1020,9 @@ def webapp_role():
 # -------------------------
 
 @app.route("/debug/downlines/<int:user_id>")
+@debug_only
 def debug_downlines(user_id):
+  
   
   db = SessionLocal()
   try:
@@ -964,8 +1073,9 @@ def debug_downlines(user_id):
   finally:
         db.close()
 @app.route("/debug/link_referrer", methods=["POST"])
+@debug_only
 def debug_link_referrer():
-        
+            
     data = request.get_json(silent=True) or {}
 
     try:
@@ -1035,8 +1145,9 @@ def debug_link_referrer():
         db.close()
 
 @app.route("/debug/list_users", methods=["GET"])
+@debug_only
 def debug_list_users():
-        
+            
     db = SessionLocal()
     try:
         users = db.query(User).all()
@@ -1065,8 +1176,9 @@ def debug_list_users():
         db.close()
 
 @app.route("/debug/company_pool", methods=["GET"])
+@debug_only
 def debug_company_pool():
-        
+            
     db = SessionLocal()
     try:
         company = db.query(User).filter(User.id == COMPANY_USER_ID).first()
@@ -1099,28 +1211,31 @@ def debug_company_pool():
 
 # Single, canonical debug simulate_deposit implementation
 @app.route("/debug/simulate_deposit", methods=["POST"])
+@debug_only
 def debug_simulate_deposit():
-    if not check_debug_key():
-        return jsonify(ok=False, error="invalid_debug_key"), 401
 
     payload = request.get_json(silent=True) or {}
 
     try:
         tg_id = int(payload.get("user_id"))
-        amount = float(payload.get("amount"))
-        tx_musd = str(payload.get("tx_musd") or "")
+        amount_ton = float(payload.get("amount"))   # treat as TON-equivalent
+        tx_hash = str(payload.get("tx_musd") or "DEBUG_TX")
     except Exception:
         return jsonify(ok=False, error="missing_user_or_amount"), 400
+
+    if amount_ton <= 0:
+        return jsonify(ok=False, error="invalid_amount"), 400
 
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.id == tg_id).first()
         if not user:
             return jsonify(ok=False, error="user_not_found"), 404
+
         became_origin_now = False
 
-        # 🔹 2️⃣ ACTIVATE USER IF ELIGIBLE
-        if amount >= 20:
+        # 🔹 1️⃣ Activate user if eligible
+        if amount_ton >= 20:
             if not user.self_activated:
                 user.self_activated = True
 
@@ -1128,35 +1243,45 @@ def debug_simulate_deposit():
                 user.role = "origin"
                 became_origin_now = True
 
-        # 🔹 3️⃣ USER BUSINESS
-        user.total_team_business = float(user.total_team_business or 0) + amount
+        # 🔹 2️⃣ SPLIT TON → MUSD / MSTC
+        musd_amount, mstc_amount = split_deposit_amount(amount_ton)
+
+        user.balance_musd = float(user.balance_musd or 0) + musd_amount
+        user.balance_mstc = float(user.balance_mstc or 0) + mstc_amount
+
+        # 🔹 3️⃣ Business volume
+        user.total_team_business = float(user.total_team_business or 0) + amount_ton
         db.add(user)
 
-        # 🔹 4️⃣ TEAM BUSINESS PROPAGATION
-        propagate_team_business(db, user, amount, became_origin_now)
+        # 🔹 4️⃣ Team propagation
+        propagate_team_business(db, user, amount_ton, became_origin_now)
 
-        # 🔹 5️⃣ RANK UPDATE
+        # 🔹 5️⃣ Rank update
         update_rank(user)
 
-        # 🔹 6️⃣ CLUB BONUS (2%)
-        club_cut = distribute_club_bonus(db, amount)
+        # 🔹 6️⃣ Club bonus (2%)
+        club_cut = distribute_club_bonus(db, amount_ton)
 
-        # 🔹 7️⃣ TRANSACTION RECORD
+        # 🔹 7️⃣ Transaction record (DEBUG)
         db.add(Transaction(
             user_id=user.id,
-            amount=amount,
-            currency="MUSD",
+            amount=amount_ton,
+            currency="TON",
             type="deposit",
-            external_id=tx_musd,
+            external_id=tx_hash,
             created_at=datetime.utcnow(),
         ))
 
-        # 🔹 8️⃣ FINAL COMMIT
+        # 🔹 8️⃣ Commit
         db.commit()
         db.refresh(user)
 
         return jsonify(
             ok=True,
+            credited={
+                "musd": musd_amount,
+                "mstc": mstc_amount
+            },
             user={
                 "id": user.id,
                 "role": user.role,
@@ -1168,16 +1293,16 @@ def debug_simulate_deposit():
 
     except Exception:
         db.rollback()
-        current_app.logger.exception("simulate_deposit failed")
+        current_app.logger.exception("debug_simulate_deposit failed")
         return jsonify(ok=False, error="server_error"), 500
 
     finally:
         db.close()
-
  
 @app.route("/debug/user/<int:user_id>")
+@debug_only
 def debug_user(user_id):
-        
+            
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.id == user_id).first()
@@ -1202,12 +1327,9 @@ def debug_user(user_id):
         db.close()
 
 @app.route("/debug/reset_user/<int:user_id>", methods=["POST"])
+@debug_only
 def debug_reset_user(user_id):
-    
-    if not check_debug_key():
-        return jsonify(ok=False, error="invalid_debug_key"), 401
-
-    
+        
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.id == user_id).first()
@@ -1243,8 +1365,9 @@ def debug_reset_user(user_id):
         db.close()
 
 @app.route("/debug/transactions/<int:user_id>", methods=["GET"])
+@debug_only
 def debug_transactions(user_id):
-        
+            
     db = SessionLocal()
     try:
         txs = (
@@ -1274,38 +1397,88 @@ def debug_transactions(user_id):
 
 @app.route("/deposit/submit", methods=["POST"])
 def deposit_submit():
-    current_app.logger.info("deposit_submit called")
-
     data = request.get_json(silent=True) or {}
-    current_app.logger.info("deposit_submit raw data: %s", data)
 
     try:
-        user_id = int(data.get("user_id"))
-        amount = float(data.get("amount"))
-        tx_boc = data.get("tx_boc")
+        user_id = int(data["user_id"])
+        amount_ton = float(data["amount"])   # TON sent on-chain
+        tx_hash = data["tx_hash"]
     except Exception:
-        current_app.logger.warning("deposit_submit invalid payload")
         return jsonify(ok=False, error="invalid_payload"), 400
 
-    current_app.logger.info("deposit_submit payload parsed")
-
-    # 🔴 ADD THIS
-    current_app.logger.info("deposit_submit BEFORE ton verification")
-
-    current_app.logger.warning("TON verification TEMPORARILY BYPASSED")
-    # 🔴 ADD THIS
-    current_app.logger.info("deposit_submit AFTER ton verification")
+    if amount_ton <= 0:
+        return jsonify(ok=False, error="invalid_amount"), 400
 
     db = SessionLocal()
     try:
+        # 1️⃣ user exists
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
             return jsonify(ok=False, error="user_not_found"), 404
 
+        # 2️⃣ prevent duplicate tx
+        exists = (
+            db.query(Transaction)
+            .filter(Transaction.external_id == tx_hash)
+            .first()
+        )
+        if exists:
+            return jsonify(ok=False, error="tx_already_processed"), 409
+
+        # 3️⃣ verify TON transaction
+        verified = verify_ton_tx_by_hash(
+            tx_hash=tx_hash,
+            expected_amount_ton=amount_ton
+        )
+        if not verified:
+            return jsonify(ok=False, error="ton_verification_failed"), 400
+
+        # 4️⃣ SPLIT TON → MUSD / MSTC
+        musd_amount, mstc_amount = split_deposit_amount(amount_ton)
+
+        # 5️⃣ Activate user if eligible
+        became_origin_now = False
+        if amount_ton >= 20 and not user.self_activated:
+            user.self_activated = True
+            if user.role == "user":
+                user.role = "origin"
+                became_origin_now = True
+
+        # 6️⃣ Credit balances
+        user.balance_musd = float(user.balance_musd or 0) + musd_amount
+        user.balance_mstc = float(user.balance_mstc or 0) + mstc_amount
+
+        # 7️⃣ Business volume (use TON or MUSD — choose ONE)
+        user.total_team_business = (user.total_team_business or 0) + amount_ton
+
+        db.add(user)
+
+        propagate_team_business(db, user, amount_ton, became_origin_now)
+        update_rank(user)
+
+        club_cut = distribute_club_bonus(db, amount_ton)
+
+        # 8️⃣ Store transaction
+        db.add(Transaction(
+            user_id=user.id,
+            amount=amount_ton,
+            currency="TON",
+            type="deposit",
+            external_id=tx_hash,
+            created_at=datetime.utcnow()
+        ))
+
         db.commit()
 
-        current_app.logger.info("deposit_submit returning OK")
-        return jsonify(ok=True)
+        return jsonify(
+            ok=True,
+            credited={
+                "musd": musd_amount,
+                "mstc": mstc_amount
+            },
+            user_role=user.role,
+            club_cut=club_cut
+        )
 
     except Exception:
         db.rollback()
@@ -1313,6 +1486,7 @@ def deposit_submit():
         return jsonify(ok=False, error="server_error"), 500
     finally:
         db.close()
+
  
 @app.route("/webhook", methods=["POST"])
 def telegram_webhook():
@@ -1332,6 +1506,8 @@ def telegram_webhook():
         app.logger.exception("handle_command failed")
 
     return response, 200
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=5000, debug=DEBUG_MODE)
 
 
 
