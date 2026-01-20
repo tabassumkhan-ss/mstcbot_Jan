@@ -61,43 +61,66 @@ def ton_api(method: str, params: dict):
 
 def verify_ton_tx_by_hash(tx_hash: str, expected_amount_ton: float) -> bool:
     """
-    Verifies TON payment by transaction hash.
-
-    Checks:
-    - tx exists in company wallet history
-    - tx has incoming message
-    - value >= expected_amount_ton
+    Verifies TON payment by transaction hash
     """
-
     if not TONCENTER_API_KEY or not TON_COMPANY_WALLET:
         raise RuntimeError("TON env vars not set")
 
-    # Convert expected amount to nanoTON (integer-safe)
-    expected_nano = int(expected_amount_ton * 1e9)
-
     txs = ton_api("getTransactions", {
         "account": TON_COMPANY_WALLET,
-        "limit": 50
+        "limit": 100
     })
 
     for tx in txs.get("result", []):
-        tx_id = tx.get("transaction_id", {}).get("hash")
-        if tx_id != tx_hash:
+        if tx.get("transaction_id", {}).get("hash") != tx_hash:
             continue
 
         in_msg = tx.get("in_msg")
         if not in_msg:
-            return False
+            continue
 
-        value_nano = int(in_msg.get("value", 0))
+        value = int(in_msg.get("value", 0)) / 1e9  # nanoTON → TON
+        dst = in_msg.get("destination")
 
-        # Must be incoming and sufficient value
-        if value_nano >= expected_nano:
+        if dst != TON_COMPANY_WALLET:
+            continue
+
+        if value >= expected_amount_ton:
             return True
 
-        return False
-
     return False
+
+def verify_ton_tx_with_retry(
+    tx_hash: str,
+    expected_amount_ton: float,
+    retries: int = 10,
+    delay: int = 3,
+) -> bool:
+    """
+    Retries TON verification to wait for blockchain indexing.
+    Total wait ≈ retries × delay seconds.
+    """
+    for attempt in range(retries):
+        try:
+            if verify_ton_tx_by_hash(tx_hash, expected_amount_ton):
+                logger.info(
+                    "TON verified on attempt %s for tx %s",
+                    attempt + 1,
+                    tx_hash[:10],
+                )
+                return True
+        except Exception as e:
+            logger.warning(
+                "TON verify attempt %s failed: %s",
+                attempt + 1,
+                e,
+            )
+
+        time.sleep(delay)
+
+    logger.error("TON verification timeout for tx %s", tx_hash[:10])
+    return False
+
 
 ENV = os.getenv("ENV", "dev").strip().lower()
 DEBUG_MODE = ENV != "prod"
@@ -1426,7 +1449,7 @@ def deposit_submit():
             return jsonify(ok=False, error="tx_already_processed"), 409
 
         # 3️⃣ verify TON transaction
-        verified = verify_ton_tx_by_hash(
+        verified = verify_ton_tx_with_retry(
             tx_hash=tx_hash,
             expected_amount_ton=amount_ton
         )
