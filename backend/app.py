@@ -1,21 +1,14 @@
-import os
 import logging
-import traceback
-import json
 import time
-import base64
-from urllib.parse import parse_qsl
-from datetime import datetime
-from typing import Optional
-from sqlalchemy import text
-from sqlalchemy import func
-
-from flask import Flask, request, jsonify, send_from_directory, current_app
-from flask_cors import CORS
-from sqlalchemy.exc import SQLAlchemyError
+import os
 import requests
 from dotenv import load_dotenv
-from sqlalchemy.exc import OperationalError
+
+from flask import Flask, request, jsonify, current_app
+from flask_cors import CORS
+
+from sqlalchemy import text, func
+from sqlalchemy.exc import SQLAlchemyError, OperationalError
 
 # local imports
 from backend.models import Base, engine, SessionLocal, User, Transaction, ReferralEvent
@@ -32,9 +25,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # -------------------------
+# Flask app creation  ✅ MUST COME EARLY
+# -------------------------
+app = Flask(__name__)
+CORS(app)
+
+# -------------------------
 # TON configuration
 # -------------------------
-
 TONCENTER_API = "https://toncenter.com/api/v2"
 TONCENTER_API_KEY = os.getenv("TONCENTER_API_KEY")
 TON_COMPANY_WALLET = os.getenv("TON_COMPANY_WALLET")
@@ -45,16 +43,20 @@ if not TONCENTER_API_KEY:
 if not TON_COMPANY_WALLET:
     logger.warning("TON_COMPANY_WALLET is NOT set")
 
-@app.get("/config")
+# -------------------------
+# CONFIG ENDPOINT (USED BY TELEGRAM HTML)
+# -------------------------
+@app.route("/config", methods=["GET"])
 def get_config():
     return jsonify({
         "treasury_ton_address": TON_COMPANY_WALLET
     })
 
+# -------------------------
+# TON API HELPERS
+# -------------------------
 def ton_api(method: str, params: dict):
-    headers = {
-        "X-API-Key": TONCENTER_API_KEY
-    }
+    headers = {"X-API-Key": TONCENTER_API_KEY}
     r = requests.get(
         f"{TONCENTER_API}/{method}",
         params=params,
@@ -84,7 +86,7 @@ def verify_ton_tx_by_hash(tx_hash: str, expected_amount_ton: float) -> bool:
         if not in_msg:
             continue
 
-        value = int(in_msg.get("value", 0)) / 1e9  # nanoTON → TON
+        value = int(in_msg.get("value", 0)) / 1e9
         dst = in_msg.get("destination")
 
         if dst != TON_COMPANY_WALLET:
@@ -103,7 +105,6 @@ def verify_ton_tx_with_retry(
 ) -> bool:
     """
     Retries TON verification to wait for blockchain indexing.
-    Total wait ≈ retries × delay seconds.
     """
     for attempt in range(retries):
         try:
@@ -126,51 +127,39 @@ def verify_ton_tx_with_retry(
     logger.error("TON verification timeout for tx %s", tx_hash[:10])
     return False
 
-
+# -------------------------
+# ENV / DEBUG
+# -------------------------
 ENV = os.getenv("ENV", "dev").strip().lower()
 DEBUG_MODE = ENV != "prod"
 
 logger.info("ENV=%s | DEBUG_MODE=%s", ENV, DEBUG_MODE)
+logger.info("BOT_TOKEN loaded: %s", "YES" if os.getenv("BOT_TOKEN") else "NO")
 
-# Now it is safe to log
-logger.info(
-    "BOT_TOKEN loaded: %s",
-    "YES" if os.getenv("BOT_TOKEN") else "NO"
-)
 # -------------------------
-# Flask app creation
+# DEBUG KEY CHECK (UNCHANGED)
 # -------------------------
-app = Flask(__name__)
-CORS(app)
-
 def check_debug_key():
-    """
-    Robust check for debug key. Accept header variants, query param 'debug_key' or 'key',
-    and strip whitespace before comparing.
-    """
     expected = current_app.config.get("DEBUG_KEY") or os.getenv("DEBUG_KEY")
     if not expected:
-        current_app.logger.warning("check_debug_key: DEBUG_KEY not set in config or env")
+        current_app.logger.warning("DEBUG_KEY not set")
         return False
 
-    expected_norm = str(expected).strip()
+    expected = str(expected).strip()
 
-    # try common header names
     for k in ("X-DEBUG-KEY", "X-Debug-Key", "x-debug-key"):
         val = request.headers.get(k)
-        if val and str(val).strip() == expected_norm:
+        if val and val.strip() == expected:
             return True
 
-    # fallback: scan headers that contain both 'debug' and 'key'
     for hk, hv in request.headers.items():
         if "debug" in hk.lower() and "key" in hk.lower():
-            if str(hv).strip() == expected_norm:
+            if hv.strip() == expected:
                 return True
 
-    # also accept query params for convenience
     for param in ("debug_key", "key"):
         q = request.args.get(param)
-        if q and str(q).strip() == expected_norm:
+        if q and q.strip() == expected:
             return True
 
     return False
