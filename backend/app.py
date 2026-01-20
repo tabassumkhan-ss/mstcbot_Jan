@@ -45,6 +45,11 @@ if not TONCENTER_API_KEY:
 if not TON_COMPANY_WALLET:
     logger.warning("TON_COMPANY_WALLET is NOT set")
 
+@app.get("/config")
+def get_config():
+    return jsonify({
+        "treasury_ton_address": TON_COMPANY_WALLET
+    })
 
 def ton_api(method: str, params: dict):
     headers = {

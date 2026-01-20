@@ -582,46 +582,34 @@
 
 <script>
 
-document.addEventListener("DOMContentLoaded", () => {
-
-  // 🔧 Browser safety: disable overlays
-  if (!window.Telegram || !window.Telegram.WebApp) {
-    const overlay = document.getElementById("menuOverlay");
-    if (overlay) overlay.style.display = "none";
-
-    const modal = document.getElementById("modal");
-    if (modal) modal.classList.add("hidden");
-
-    console.log("🧪 Browser mode detected — overlays disabled");
-  }
-
-  // ✅ YES button direct handler
-  const yesBtn = document.getElementById("yesBtn");
-  if (yesBtn) {
-    yesBtn.onclick = async () => {
-      console.log("✅ YES clicked (direct handler)");
-
-      const data = await loadActivationStatus();
-      if (data?.exists === true) {
-        renderRegisteredView(
-          data.user.id,
-          data.user.first_name,
-          null,
-          data.user
-        );
-      }
-    };
-  }
-
-});
-
-  window.impersonation = {
-  active: false,
-  user: null
-};
-
 const BACKEND_URL = "https://mstcbotjan-production.up.railway.app";
 const BOT_USERNAME = "mstcrewardbot"; 
+
+let TREASURY_TON_ADDRESS = null;
+
+async function loadConfig() {
+  const res = await fetch(BACKEND_URL + "/config");
+  const cfg = await res.json();
+
+  TREASURY_TON_ADDRESS = cfg.treasury_ton_address;
+
+  console.log("🏦 Treasury wallet loaded:", TREASURY_TON_ADDRESS);
+
+  const btn = document.getElementById("submitDeposit");
+  if (btn) {
+    btn.disabled = false;
+    btn.style.opacity = "1";
+  }
+}
+
+async function sha256Hex(data) {
+  const enc = new TextEncoder().encode(data);
+  const buf = await crypto.subtle.digest("SHA-256", enc);
+  return [...new Uint8Array(buf)]
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 
   // --- Referral from URL (?ref=...) ---
   const urlParams = new URLSearchParams(window.location.search);
@@ -660,9 +648,6 @@ tonConnectUI.setConnectRequestParameters({
 function isWalletConnected() {
   return !!tonConnectUI.wallet?.account?.address;
 }
-
-const TREASURY_TON_ADDRESS =
-  "UQAZGsz5gaOVtAK67pITWUMUMYNMjccCSbMC5sAMx2say10K";
 
  let lastSavedWallet = null;
 
@@ -722,26 +707,27 @@ async function connectTonWallet() {
 }
 
 async function sendTonDeposit(amountUsd) {
-  const TON_RATE = 100; // TEST RATE: $100 = 1 TON
+
+  if (!TREASURY_TON_ADDRESS) {
+    throw new Error("Treasury address not loaded");
+  }
+
+  const TON_RATE = 100;
   const tonAmount = amountUsd / TON_RATE;
   const nanoTon = Math.floor(tonAmount * 1e9);
-
-  console.log("Sending TON:", tonAmount);
 
   const tx = {
     validUntil: Math.floor(Date.now() / 1000) + 300,
     messages: [
       {
-        address: "0QCaCGBFDP-J2Yxrz1Qwu_lPZ0K4nVv9BrzbZ9_BU5TUAZl4",
+        address: TREASURY_TON_ADDRESS, // ✅ ALWAYS correct
         amount: nanoTon.toString(),
       }
     ]
   };
 
-  const result = await tonConnectUI.sendTransaction(tx);
-  return result.boc;
+  return await tonConnectUI.sendTransaction(tx);
 }
-
 
   const unsafe = tg ? tg.initDataUnsafe || {} : {};
   console.log("DEBUG initDataUnsafe:", unsafe);   // <<< IMPORTANT
@@ -840,7 +826,7 @@ function renderDepositPanel() {
       <input id="amt" type="number" min="20" placeholder="Minimum $20" />
 
       <div class="submit">
-        <button class="btn secondary" id="submitDeposit">
+        <button class="btn secondary" id="submitDeposit" disabled style="opacity:.6">
           Submit Deposit
         </button>
       </div>
@@ -947,32 +933,56 @@ function bindDepositLogic() {
     }
 
     try {
-      // 2️⃣ Send TON (TESTNET)
-      const txBoc = await sendTonDeposit(amount);
+      // 2️⃣ Send TON 
+      const tonResult = await sendTonDeposit(amount);
 
-      // 3️⃣ Notify backend
-      const res = await fetch(BACKEND_URL + "/deposit/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-  user_id: tg.initDataUnsafe.user.id, // 🔴 REQUIRED
-  amount: Number(amount),
-  tx_boc: txBoc
-})
-      });
+// extract hash / boc safely
+const txHash =
+  tonResult?.txHash ||
+  tonResult?.transaction?.hash ||
+  null;
+
+const txBoc =
+  tonResult?.boc ||
+  tonResult?.transaction?.boc ||
+  null;
+
+// 🔑 USD → TON (must match backend logic)
+const TON_RATE = 100; // same as sendTonDeposit
+const tonAmount = Number(amount) / TON_RATE;
+
+document.getElementById("submitMsg").innerText =
+  "⏳ Transaction sent. Verifying on blockchain…";
+
+// 🔑 ALWAYS call backend (even if hash missing)
+const res = await fetch(BACKEND_URL + "/deposit/submit", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    user_id: tg.initDataUnsafe.user.id,
+    amount: tonAmount,     // ✅ TON, not USD
+    tx_hash: txHash,       // ✅ backend uses this
+    tx_boc: txBoc          // optional, future-proof
+  })
+});
+
 
       const data = await res.json();
       if (!data.ok) {
-        throw new Error(data.error || "Deposit failed");
+        throw new Error(data.error || "Verification Pending");
       }
 
       alert("✅ Deposit successful");
       amountInput.value = "";
 
     } catch (err) {
-      console.error(err);
-      alert("Transaction failed or rejected");
-    }
+  console.error("Deposit error:", err);
+
+  alert(
+    err?.message ||
+    "Transaction failed. Please wait 10–20 seconds and try again."
+  );
+}
   });
 }
 
@@ -1156,8 +1166,39 @@ function showRegisterScreen() {
 
   // --- YES / NO button handlers + init ---
 document.addEventListener("DOMContentLoaded", async () => {
-  const data = await loadActivationStatus(); // calls /webapp/init
 
+  // 🔑 LOAD CONFIG FIRST (VERY IMPORTANT)
+  await loadConfig();
+
+  // 🔧 Browser safety
+  if (!window.Telegram || !window.Telegram.WebApp) {
+    const overlay = document.getElementById("menuOverlay");
+    if (overlay) overlay.style.display = "none";
+
+    const modal = document.getElementById("modal");
+    if (modal) modal.classList.add("hidden");
+
+    console.log("🧪 Browser mode detected — overlays disabled");
+  }
+
+  // YES button
+  const yesBtn = document.getElementById("yesBtn");
+  if (yesBtn) {
+    yesBtn.onclick = async () => {
+      const data = await loadActivationStatus();
+      if (data?.exists === true) {
+        renderRegisteredView(
+          data.user.id,
+          data.user.first_name,
+          null,
+          data.user
+        );
+      }
+    };
+  }
+
+  // INIT USER
+  const data = await loadActivationStatus();
   if (data?.exists === true) {
     renderRegisteredView(
       data.user.id,
@@ -1166,11 +1207,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       data.user
     );
   } else {
-    showRegisterScreen(); // just YES/NO UI
+    showRegisterScreen();
   }
 });
 
-  
+
 // ================= MENU EVENT DELEGATION =================
 function openMenu() {
   document.getElementById("sideMenu")?.classList.add("open");
