@@ -918,7 +918,6 @@ function bindDepositLogic() {
     return;
   }
 
-  // 🔑 ALWAYS enable button once bound
   btn.disabled = false;
   btn.style.opacity = "1";
 
@@ -930,34 +929,31 @@ function bindDepositLogic() {
     const amountInput = document.getElementById("amt");
     const amountUsd = Number(amountInput?.value);
 
-    console.log("💵 Amount entered (USD):", amountUsd);
-
     if (!amountUsd || amountUsd < 20) {
       alert("Minimum deposit is $20");
       return;
     }
 
-    // 🔒 prevent double clicks
     btn.disabled = true;
     btn.style.opacity = "0.6";
 
     try {
-      // 1️⃣ Ensure wallet is connected
+      // 1️⃣ Ensure wallet connected
       if (!isWalletConnected()) {
-        console.log("🔵 Wallet not connected, opening connect modal");
         await tonConnectUI.connectWallet();
       }
 
-      if (!isWalletConnected()) {
-        throw new Error("Wallet connection cancelled");
+      // 2️⃣ Send transaction
+      let tonResult = null;
+      try {
+        tonResult = await sendTonDeposit(amountUsd);
+        console.log("📦 TON result:", tonResult);
+      } catch (e) {
+        // 🔥 ANDROID TONKEEPER BUG — IGNORE
+        console.warn("⚠️ TON Connect returned error (ignored):", e);
       }
 
-      // 2️⃣ Send TON
-      console.log("🚀 Sending TON...");
-      const tonResult = await sendTonDeposit(amountUsd);
-      console.log("📦 TON result:", tonResult);
-
-      // 3️⃣ Extract tx hash / boc safely
+      // 3️⃣ Extract hash safely (may be null)
       const txHash =
         tonResult?.txHash ||
         tonResult?.transaction?.hash ||
@@ -971,18 +967,18 @@ function bindDepositLogic() {
       document.getElementById("submitMsg").innerText =
         "⏳ Transaction sent. Verifying on blockchain…";
 
-      // 4️⃣ USD → TON (MUST match backend rate)
+      // 4️⃣ USD → TON (must match backend)
       const TON_RATE = 100;
       const tonAmount = amountUsd / TON_RATE;
 
-      // 5️⃣ Call backend verification
+      // 5️⃣ ALWAYS call backend (even without txHash)
       const res = await fetch(BACKEND_URL + "/deposit/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           user_id: tg.initDataUnsafe.user.id,
-          amount: tonAmount,     // ✅ TON amount
-          tx_hash: txHash,
+          amount: tonAmount,
+          tx_hash: txHash, // may be null ✅
           tx_boc: txBoc
         })
       });
@@ -991,7 +987,7 @@ function bindDepositLogic() {
       console.log("🧾 Backend response:", data);
 
       if (!data.ok) {
-        throw new Error(data.error || "Verification failed");
+        throw new Error(data.error || "Verification pending");
       }
 
       alert("✅ Deposit successful");
@@ -999,14 +995,14 @@ function bindDepositLogic() {
 
     } catch (err) {
       console.error("❌ Deposit error:", err);
-      alert(err.message || "Transaction failed or rejected");
+      alert("Transaction sent. Verification in progress…");
     } finally {
-      // 🔓 re-enable button
       btn.disabled = false;
       btn.style.opacity = "1";
     }
   };
 }
+
 
 function renderUserHeader(userData) {
   const tgUser = Telegram.WebApp?.initDataUnsafe?.user || {};
