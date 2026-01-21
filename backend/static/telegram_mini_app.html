@@ -1135,6 +1135,7 @@ function getDashboardSkeletonHTML() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         initData,
+        user_id: tg?.initDataUnsafe?.user?.id || null,
         ref: window.currentRef || null
       })
     });

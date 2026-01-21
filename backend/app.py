@@ -14,6 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError, OperationalError
 # local imports
 from backend.models import Base, engine, SessionLocal, User, Transaction, ReferralEvent
 
+
 # -------------------------
 # Load environment & logging
 # -------------------------
@@ -516,14 +517,39 @@ def webapp_init():
     data = request.get_json(silent=True) or {}
     init_data = data.get("initData")
 
-    if not init_data:
-        return jsonify(ok=False, error="missing_init_data"), 400
+    telegram_id = None
+    username = None
+    first_name = None
+    start_param = None
 
-    telegram_id, username, first_name, start_param = verify_telegram_init_data(init_data)
+    # -----------------------------
+    # 1️⃣ PROD: strict Telegram verification
+    # -----------------------------
+    if init_data:
+        try:
+            telegram_id, username, first_name, start_param = (
+                verify_telegram_init_data(init_data)
+            )
+        except Exception as e:
+            app.logger.warning("Telegram init verify failed: %s", e)
+
+    # -----------------------------
+    # 2️⃣ DEV / FALLBACK MODE
+    # -----------------------------
     if not telegram_id:
-        return jsonify(ok=False, error="invalid_telegram_user"), 400
+        if DEBUG_MODE:
+            telegram_id = data.get("user_id")
+            first_name = first_name or "DevUser"
+            username = username or None
+            app.logger.warning(
+                "⚠️ DEV MODE INIT: using user_id=%s", telegram_id
+            )
+        else:
+            return jsonify(ok=False, error="invalid_telegram_user"), 400
 
-    # 🔍 REF DEBUG
+    # -----------------------------
+    # 3️⃣ REF DEBUG
+    # -----------------------------
     app.logger.info(
         "REF DEBUG → telegram_id=%s start_param=%s",
         telegram_id,
@@ -534,7 +560,7 @@ def webapp_init():
     try:
         user = db.query(User).filter(User.id == telegram_id).first()
 
-        # 🟢 EXISTING USER → NEVER overwrite referrer
+        # 🟢 EXISTING USER
         if user:
             return jsonify(
                 ok=True,
@@ -551,9 +577,9 @@ def webapp_init():
                 }
             )
 
-        # 🟢 NEW USER → set referrer ONCE
+        # 🟢 NEW USER
         referrer_id = None
-        if start_param and start_param.isdigit():
+        if start_param and str(start_param).isdigit():
             referrer_id = int(start_param)
 
         user = User(
@@ -573,11 +599,19 @@ def webapp_init():
             user.referrer_id
         )
 
-        return jsonify(ok=True, exists=False)
+        return jsonify(ok=True, exists=False, user={
+            "id": user.id,
+            "first_name": user.first_name,
+            "username": user.username,
+            "role": user.role,
+            "self_activated": user.self_activated,
+            "total_team_business": 0,
+            "active_origin_count": 0,
+            "referrer_id": user.referrer_id,
+        })
 
     finally:
         db.close()
-
 
 @app.route("/webapp/user", methods=["POST"])
 def webapp_user():
