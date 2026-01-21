@@ -35,7 +35,7 @@ CORS(app)
 # -------------------------
 # TON configuration
 # -------------------------
-TONCENTER_API = "https://toncenter.com/api/v2"
+TONCENTER_API = "https://toncenter.com/api/v3"
 TONCENTER_API_KEY = os.getenv("TONCENTER_API_KEY")
 TON_COMPANY_WALLET = os.getenv("TON_COMPANY_WALLET")
 
@@ -69,19 +69,26 @@ def ton_api(method: str, params: dict):
     return r.json()
 
 def verify_ton_tx_by_hash(tx_hash: str, expected_amount_ton: float) -> bool:
-    """
-    Verifies TON payment by transaction hash
-    """
     if not TONCENTER_API_KEY or not TON_COMPANY_WALLET:
         raise RuntimeError("TON env vars not set")
 
-    txs = ton_api("getTransactions", {
-        "account": TON_COMPANY_WALLET,
-        "limit": 100
-    })
+    r = requests.get(
+        f"{TONCENTER_API}/transactions",
+        params={
+            "account": TON_COMPANY_WALLET,
+            "limit": 20
+        },
+        headers={
+            "X-API-Key": TONCENTER_API_KEY
+        },
+        timeout=10
+    )
 
-    for tx in txs.get("result", []):
-        if tx.get("transaction_id", {}).get("hash") != tx_hash:
+    r.raise_for_status()
+    data = r.json()
+
+    for tx in data.get("transactions", []):
+        if tx.get("hash") != tx_hash:
             continue
 
         in_msg = tx.get("in_msg")
@@ -91,10 +98,7 @@ def verify_ton_tx_by_hash(tx_hash: str, expected_amount_ton: float) -> bool:
         value = int(in_msg.get("value", 0)) / 1e9
         dst = in_msg.get("destination")
 
-        if dst != TON_COMPANY_WALLET:
-            continue
-
-        if value >= expected_amount_ton:
+        if dst == TON_COMPANY_WALLET and value >= expected_amount_ton:
             return True
 
     return False
@@ -1447,12 +1451,12 @@ def deposit_submit():
     try:
         user_id = int(data["user_id"])
         amount_ton = float(data["amount"])   # TON sent on-chain
-        tx_hash = data["tx_hash"]
+        tx_hash = str(data["tx_hash"]).strip()
     except Exception:
         return jsonify(ok=False, error="invalid_payload"), 400
 
-    if amount_ton <= 0:
-        return jsonify(ok=False, error="invalid_amount"), 400
+    if amount_ton <= 0 or not tx_hash:
+        return jsonify(ok=False, error="invalid_amount_or_tx"), 400
 
     db = SessionLocal()
     try:
@@ -1470,59 +1474,24 @@ def deposit_submit():
         if exists:
             return jsonify(ok=False, error="tx_already_processed"), 409
 
-        # 3️⃣ verify TON transaction
-        verified = verify_ton_tx_with_retry(
-            tx_hash=tx_hash,
-            expected_amount_ton=amount_ton
-        )
-        if not verified:
-            return jsonify(ok=False, error="ton_verification_failed"), 400
-
-        # 4️⃣ SPLIT TON → MUSD / MSTC
-        musd_amount, mstc_amount = split_deposit_amount(amount_ton)
-
-        # 5️⃣ Activate user if eligible
-        became_origin_now = False
-        if amount_ton >= 20 and not user.self_activated:
-            user.self_activated = True
-            if user.role == "user":
-                user.role = "origin"
-                became_origin_now = True
-
-        # 6️⃣ Credit balances
-        user.balance_musd = float(user.balance_musd or 0) + musd_amount
-        user.balance_mstc = float(user.balance_mstc or 0) + mstc_amount
-
-        # 7️⃣ Business volume (use TON or MUSD — choose ONE)
-        user.total_team_business = (user.total_team_business or 0) + amount_ton
-
-        db.add(user)
-
-        propagate_team_business(db, user, amount_ton, became_origin_now)
-        update_rank(user)
-
-        club_cut = distribute_club_bonus(db, amount_ton)
-
-        # 8️⃣ Store transaction
-        db.add(Transaction(
+        # 3️⃣ store TX as PENDING (NO VERIFICATION HERE)
+        tx = Transaction(
             user_id=user.id,
             amount=amount_ton,
             currency="TON",
             type="deposit",
             external_id=tx_hash,
+            status="pending",          # 🔑 IMPORTANT
             created_at=datetime.utcnow()
-        ))
-
+        )
+        db.add(tx)
         db.commit()
 
+        # 4️⃣ respond immediately
         return jsonify(
             ok=True,
-            credited={
-                "musd": musd_amount,
-                "mstc": mstc_amount
-            },
-            user_role=user.role,
-            club_cut=club_cut
+            status="pending",
+            message="Transaction received. Verification in progress."
         )
 
     except Exception:
@@ -1531,7 +1500,6 @@ def deposit_submit():
         return jsonify(ok=False, error="server_error"), 500
     finally:
         db.close()
-
  
 @app.route("/webhook", methods=["POST"])
 def telegram_webhook():
