@@ -913,77 +913,75 @@ function bindRankLogic(userData) {
 function bindDepositLogic() {
   const btn = document.getElementById("submitDeposit");
 
-  btn.addEventListener("click", async () => {
+  if (!btn) {
+    console.error("❌ submitDeposit button NOT FOUND");
+    return;
+  }
+
+  console.log("✅ submitDeposit button bound");
+
+  btn.onclick = async () => {
+    console.log("🟢 Submit Deposit CLICKED");
+
     const amountInput = document.getElementById("amt");
     const amount = Number(amountInput.value);
+
+    console.log("Amount entered:", amount);
 
     if (!amount || amount < 20) {
       alert("Minimum deposit is $20");
       return;
     }
 
-    // 1️⃣ Ensure wallet connected
-    if (!isWalletConnected()) {
-      try {
-        await tonConnectUI.connectWallet();
-      } catch {
-        alert("Wallet connection cancelled");
-        return;
-      }
-    }
-
     try {
-      // 2️⃣ Send TON 
+      if (!isWalletConnected()) {
+        console.log("🔵 Wallet not connected, opening connect modal");
+        await tonConnectUI.connectWallet();
+      }
+
+      console.log("🚀 Sending TON...");
       const tonResult = await sendTonDeposit(amount);
+      console.log("TON result:", tonResult);
 
-// extract hash / boc safely
-const txHash =
-  tonResult?.txHash ||
-  tonResult?.transaction?.hash ||
-  null;
+      const txHash =
+        tonResult?.txHash ||
+        tonResult?.transaction?.hash ||
+        null;
 
-const txBoc =
-  tonResult?.boc ||
-  tonResult?.transaction?.boc ||
-  null;
+      const txBoc =
+        tonResult?.boc ||
+        tonResult?.transaction?.boc ||
+        null;
 
-// 🔑 USD → TON (must match backend logic)
-const TON_RATE = 100; // same as sendTonDeposit
-const tonAmount = Number(amount) / TON_RATE;
+      document.getElementById("submitMsg").innerText =
+        "⏳ Transaction sent. Verifying on blockchain…";
 
-document.getElementById("submitMsg").innerText =
-  "⏳ Transaction sent. Verifying on blockchain…";
-
-// 🔑 ALWAYS call backend (even if hash missing)
-const res = await fetch(BACKEND_URL + "/deposit/submit", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    user_id: tg.initDataUnsafe.user.id,
-    amount: tonAmount,     // ✅ TON, not USD
-    tx_hash: txHash,       // ✅ backend uses this
-    tx_boc: txBoc          // optional, future-proof
-  })
-});
-
+      const res = await fetch(BACKEND_URL + "/deposit/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: tg.initDataUnsafe.user.id,
+          amount: amount / 100,
+          tx_hash: txHash,
+          tx_boc: txBoc
+        })
+      });
 
       const data = await res.json();
+      console.log("Backend response:", data);
+
       if (!data.ok) {
-        throw new Error(data.error || "Verification Pending");
+        throw new Error(data.error || "Verification failed");
       }
 
       alert("✅ Deposit successful");
       amountInput.value = "";
 
     } catch (err) {
-  console.error("Deposit error:", err);
-
-  alert(
-    err?.message ||
-    "Transaction failed. Please wait 10–20 seconds and try again."
-  );
-}
-  });
+      console.error("❌ Deposit error:", err);
+      alert("Transaction failed or rejected");
+    }
+  };
 }
 
 function renderUserHeader(userData) {
