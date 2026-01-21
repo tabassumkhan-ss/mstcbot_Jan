@@ -826,7 +826,7 @@ function renderDepositPanel() {
       <input id="amt" type="number" min="20" placeholder="Minimum $20" />
 
       <div class="submit">
-        <button class="btn secondary" id="submitDeposit" disabled style="opacity:.6">
+        <button class="btn secondary" id="submitDeposit">
           Submit Deposit
         </button>
       </div>
@@ -918,31 +918,46 @@ function bindDepositLogic() {
     return;
   }
 
-  console.log("✅ submitDeposit button bound");
+  // 🔑 ALWAYS enable button once bound
+  btn.disabled = false;
+  btn.style.opacity = "1";
+
+  console.log("✅ submitDeposit button bound & enabled");
 
   btn.onclick = async () => {
     console.log("🟢 Submit Deposit CLICKED");
 
     const amountInput = document.getElementById("amt");
-    const amount = Number(amountInput.value);
+    const amountUsd = Number(amountInput?.value);
 
-    console.log("Amount entered:", amount);
+    console.log("💵 Amount entered (USD):", amountUsd);
 
-    if (!amount || amount < 20) {
+    if (!amountUsd || amountUsd < 20) {
       alert("Minimum deposit is $20");
       return;
     }
 
+    // 🔒 prevent double clicks
+    btn.disabled = true;
+    btn.style.opacity = "0.6";
+
     try {
+      // 1️⃣ Ensure wallet is connected
       if (!isWalletConnected()) {
         console.log("🔵 Wallet not connected, opening connect modal");
         await tonConnectUI.connectWallet();
       }
 
-      console.log("🚀 Sending TON...");
-      const tonResult = await sendTonDeposit(amount);
-      console.log("TON result:", tonResult);
+      if (!isWalletConnected()) {
+        throw new Error("Wallet connection cancelled");
+      }
 
+      // 2️⃣ Send TON
+      console.log("🚀 Sending TON...");
+      const tonResult = await sendTonDeposit(amountUsd);
+      console.log("📦 TON result:", tonResult);
+
+      // 3️⃣ Extract tx hash / boc safely
       const txHash =
         tonResult?.txHash ||
         tonResult?.transaction?.hash ||
@@ -956,19 +971,24 @@ function bindDepositLogic() {
       document.getElementById("submitMsg").innerText =
         "⏳ Transaction sent. Verifying on blockchain…";
 
+      // 4️⃣ USD → TON (MUST match backend rate)
+      const TON_RATE = 100;
+      const tonAmount = amountUsd / TON_RATE;
+
+      // 5️⃣ Call backend verification
       const res = await fetch(BACKEND_URL + "/deposit/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           user_id: tg.initDataUnsafe.user.id,
-          amount: amount / 100,
+          amount: tonAmount,     // ✅ TON amount
           tx_hash: txHash,
           tx_boc: txBoc
         })
       });
 
       const data = await res.json();
-      console.log("Backend response:", data);
+      console.log("🧾 Backend response:", data);
 
       if (!data.ok) {
         throw new Error(data.error || "Verification failed");
@@ -979,7 +999,11 @@ function bindDepositLogic() {
 
     } catch (err) {
       console.error("❌ Deposit error:", err);
-      alert("Transaction failed or rejected");
+      alert(err.message || "Transaction failed or rejected");
+    } finally {
+      // 🔓 re-enable button
+      btn.disabled = false;
+      btn.style.opacity = "1";
     }
   };
 }
@@ -1059,6 +1083,13 @@ function initDashboardUI(userData) {
   // 🟢 DEPOSIT
   renderDepositPanel();
   bindDepositLogic();
+
+   // 🔑 Enable submit if treasury is loaded
+const btn = document.getElementById("submitDeposit");
+ if (btn && TREASURY_TON_ADDRESS) {
+   btn.disabled = false;
+   btn.style.opacity = "1";
+ }
 
   // 🟢 RANK
   renderRankPanel(userData);
