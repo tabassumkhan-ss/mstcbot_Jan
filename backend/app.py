@@ -515,7 +515,9 @@ def webapp_me():
 @app.route("/webapp/init", methods=["POST"])
 def webapp_init():
     data = request.get_json(silent=True) or {}
+
     init_data = data.get("initData")
+    fallback_user_id = data.get("user_id")
 
     telegram_id = None
     username = None
@@ -523,7 +525,7 @@ def webapp_init():
     start_param = None
 
     # -----------------------------
-    # 1️⃣ PROD: strict Telegram verification
+    # 1️⃣ Try FULL Telegram verification
     # -----------------------------
     if init_data:
         try:
@@ -534,33 +536,26 @@ def webapp_init():
             app.logger.warning("Telegram init verify failed: %s", e)
 
     # -----------------------------
-    # 2️⃣ DEV / FALLBACK MODE
+    # 2️⃣ SAFE FALLBACK (Mini App only)
     # -----------------------------
     if not telegram_id:
-        if DEBUG_MODE:
-            telegram_id = data.get("user_id")
-            first_name = first_name or "DevUser"
+        if fallback_user_id:
+            telegram_id = int(fallback_user_id)
+            first_name = first_name or "Telegram User"
             username = username or None
             app.logger.warning(
-                "⚠️ DEV MODE INIT: using user_id=%s", telegram_id
+                "⚠️ FALLBACK INIT used for telegram_id=%s", telegram_id
             )
         else:
             return jsonify(ok=False, error="invalid_telegram_user"), 400
 
     # -----------------------------
-    # 3️⃣ REF DEBUG
+    # 3️⃣ Database logic
     # -----------------------------
-    app.logger.info(
-        "REF DEBUG → telegram_id=%s start_param=%s",
-        telegram_id,
-        start_param
-    )
-
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.id == telegram_id).first()
 
-        # 🟢 EXISTING USER
         if user:
             return jsonify(
                 ok=True,
@@ -577,7 +572,7 @@ def webapp_init():
                 }
             )
 
-        # 🟢 NEW USER
+        # New user
         referrer_id = None
         if start_param and str(start_param).isdigit():
             referrer_id = int(start_param)
@@ -586,29 +581,27 @@ def webapp_init():
             id=telegram_id,
             first_name=first_name,
             username=username,
-            referrer_id=referrer_id
+            referrer_id=referrer_id,
         )
 
         db.add(user)
         db.commit()
         db.refresh(user)
 
-        app.logger.info(
-            "USER CREATED → id=%s referrer_id=%s",
-            user.id,
-            user.referrer_id
+        return jsonify(
+            ok=True,
+            exists=False,
+            user={
+                "id": user.id,
+                "first_name": user.first_name,
+                "username": user.username,
+                "role": user.role,
+                "self_activated": False,
+                "total_team_business": 0,
+                "active_origin_count": 0,
+                "referrer_id": user.referrer_id,
+            },
         )
-
-        return jsonify(ok=True, exists=False, user={
-            "id": user.id,
-            "first_name": user.first_name,
-            "username": user.username,
-            "role": user.role,
-            "self_activated": user.self_activated,
-            "total_team_business": 0,
-            "active_origin_count": 0,
-            "referrer_id": user.referrer_id,
-        })
 
     finally:
         db.close()
