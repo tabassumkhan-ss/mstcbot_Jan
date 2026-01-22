@@ -592,6 +592,32 @@ const DepositState = {
 
 let currentDepositState = DepositState.IDLE;
 
+function updateDepositUI(message = "") {
+  const el = document.getElementById("depositStatus");
+  if (!el) return;
+
+  el.classList.remove("ok", "error");
+
+  switch (currentDepositState) {
+    case DepositState.VERIFYING:
+      el.innerText = "⏳ Transaction sent. Verifying on blockchain...";
+      break;
+
+    case DepositState.SUCCESS:
+      el.innerText = "✅ Deposit Successful 🎉";
+      el.classList.add("ok");
+      break;
+
+    case DepositState.ERROR:
+      el.innerText = message || "❌ Deposit failed. Please try again.";
+      el.classList.add("error");
+      break;
+
+    default:
+      el.innerText = "";
+  }
+}
+
 const BACKEND_URL = "https://mstcbotjan-production.up.railway.app";
 const BOT_USERNAME = "mstcrewardbot"; 
 
