@@ -620,6 +620,9 @@ function updateDepositUI(message = "") {
 
 const BACKEND_URL = "https://mstcbotjan-production.up.railway.app";
 const BOT_USERNAME = "mstcrewardbot"; 
+const tonConnectUI = new TonConnectUI({
+  manifestUrl: `${window.location.origin}/tonconnect-manifest.json`
+});
 
 let TREASURY_TON_ADDRESS = null;
 
@@ -664,11 +667,7 @@ async function sha256Hex(data) {
 if (!tg?.initData) {
   console.warn("⚠️ Browser mode detected (Telegram initData not available)");
 }
-    // --- TON Connect UI (global, only once) ---
-const tonConnectUI = new TON_CONNECT_UI.TonConnectUI({
-  manifestUrl: 'https://mstcbotjan-production.up.railway.app/static/tonconnect-manifest.json'
-});
-
+    
 tonConnectUI.onStatusChange(wallet => {
   console.log("TON wallet status updated:", wallet);
 
