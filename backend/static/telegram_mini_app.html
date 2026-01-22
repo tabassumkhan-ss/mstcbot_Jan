@@ -582,6 +582,16 @@
 
 <script>
 
+  /* ===== Deposit UI States ===== */
+const DepositState = {
+  IDLE: "idle",
+  VERIFYING: "verifying",
+  SUCCESS: "success",
+  ERROR: "error"
+};
+
+let currentDepositState = DepositState.IDLE;
+
 const BACKEND_URL = "https://mstcbotjan-production.up.railway.app";
 const BOT_USERNAME = "mstcrewardbot"; 
 
@@ -965,7 +975,7 @@ function bindDepositLogic() {
         null;
 
       document.getElementById("submitMsg").innerText =
-        " Transaction sent. Deposit Successfully";
+        " Transaction sent. Verifying on blockchain…";
 
       // 4️⃣ USD → TON (must match backend)
       const TON_RATE = 100;
