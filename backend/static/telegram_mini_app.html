@@ -582,47 +582,8 @@
 
 <script>
 
-  /* ===== Deposit UI States ===== */
-const DepositState = {
-  IDLE: "idle",
-  VERIFYING: "verifying",
-  SUCCESS: "success",
-  ERROR: "error"
-};
-
-let currentDepositState = DepositState.IDLE;
-
-function updateDepositUI(message = "") {
-  const el = document.getElementById("depositStatus");
-  if (!el) return;
-
-  el.classList.remove("ok", "error");
-
-  switch (currentDepositState) {
-    case DepositState.VERIFYING:
-      el.innerText = "⏳ Transaction sent. Verifying on blockchain...";
-      break;
-
-    case DepositState.SUCCESS:
-      el.innerText = "✅ Deposit Successful 🎉";
-      el.classList.add("ok");
-      break;
-
-    case DepositState.ERROR:
-      el.innerText = message || "❌ Deposit failed. Please try again.";
-      el.classList.add("error");
-      break;
-
-    default:
-      el.innerText = "";
-  }
-}
-
 const BACKEND_URL = "https://mstcbotjan-production.up.railway.app";
 const BOT_USERNAME = "mstcrewardbot"; 
-const tonConnectUI = new TonConnectUI({
-  manifestUrl: `${window.location.origin}/tonconnect-manifest.json`
-});
 
 let TREASURY_TON_ADDRESS = null;
 
@@ -667,7 +628,11 @@ async function sha256Hex(data) {
 if (!tg?.initData) {
   console.warn("⚠️ Browser mode detected (Telegram initData not available)");
 }
-    
+    // --- TON Connect UI (global, only once) ---
+const tonConnectUI = new TON_CONNECT_UI.TonConnectUI({
+  manifestUrl: 'https://mstcbotjan-production.up.railway.app/static/tonconnect-manifest.json'
+});
+
 tonConnectUI.onStatusChange(wallet => {
   console.log("TON wallet status updated:", wallet);
 
@@ -866,8 +831,6 @@ function renderDepositPanel() {
         </button>
       </div>
 
-      <!-- Deposit state feedback -->
-      <div id="depositStatus" class="mini" style="margin-top:8px;"></div>
       <div id="submitMsg" class="mini"></div>
     </div>
   `;
@@ -1002,7 +965,7 @@ function bindDepositLogic() {
         null;
 
       document.getElementById("submitMsg").innerText =
-        " Transaction sent. Verifying on blockchain…";
+        " Transaction sent. Deposit Successfully";
 
       // 4️⃣ USD → TON (must match backend)
       const TON_RATE = 100;
