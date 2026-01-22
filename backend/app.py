@@ -359,25 +359,21 @@ def verify_telegram_init_data(init_data: str):
 # -------------------------
 
 def finalize_deposit(db, tx: Transaction):
-    """
-    Finalizes a confirmed TON deposit.
-    """
     user = db.query(User).filter(User.id == tx.user_id).first()
     if not user:
         raise RuntimeError("User not found for transaction")
 
-    # Split TON → internal balances
+    # Split TON
     musd, mstc = split_deposit_amount(tx.amount)
 
     # Credit balances
     user.balance_musd = float(user.balance_musd or 0) + musd
     user.balance_mstc = float(user.balance_mstc or 0) + mstc
 
-    # Mark transaction confirmed
-    tx.status = "confirmed"
+    # Business volume
+    user.total_team_business = float(user.total_team_business or 0) + tx.amount
 
     db.add(user)
-    db.add(tx)
 
 
 
@@ -1508,7 +1504,6 @@ def deposit_submit():
             currency="TON",
             type="deposit",
             external_id=tx_hash,
-            status="pending",          # 🔑 IMPORTANT
             created_at=datetime.utcnow()
         )
         db.add(tx)
@@ -1547,9 +1542,7 @@ def deposit_verify():
         if not tx:
             return jsonify(ok=False, error="tx_not_found"), 404
 
-        if tx.status == "confirmed":
-            return jsonify(ok=True, status="already_confirmed")
-
+        
         # 🔍 VERIFY ON BLOCKCHAIN
         is_valid = verify_ton_tx_with_retry(
             tx_hash=tx.external_id,
