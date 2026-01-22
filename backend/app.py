@@ -358,6 +358,29 @@ def verify_telegram_init_data(init_data: str):
 # Business helpers
 # -------------------------
 
+def finalize_deposit(db, tx: Transaction):
+    """
+    Finalizes a confirmed TON deposit.
+    """
+    user = db.query(User).filter(User.id == tx.user_id).first()
+    if not user:
+        raise RuntimeError("User not found for transaction")
+
+    # Split TON → internal balances
+    musd, mstc = split_deposit_amount(tx.amount)
+
+    # Credit balances
+    user.balance_musd = float(user.balance_musd or 0) + musd
+    user.balance_mstc = float(user.balance_mstc or 0) + mstc
+
+    # Mark transaction confirmed
+    tx.status = "confirmed"
+
+    db.add(user)
+    db.add(tx)
+
+
+
 def require_admin(user):
     return user and user.role in ("admin", "superadmin")
 
@@ -1504,6 +1527,52 @@ def deposit_submit():
         return jsonify(ok=False, error="server_error"), 500
     finally:
         db.close()
+
+@app.route("/deposit/verify", methods=["POST"])
+def deposit_verify():
+    data = request.get_json(silent=True) or {}
+    tx_hash = data.get("tx_hash")
+
+    if not tx_hash:
+        return jsonify(ok=False, error="missing_tx_hash"), 400
+
+    db = SessionLocal()
+    try:
+        tx = (
+            db.query(Transaction)
+            .filter(Transaction.external_id == tx_hash)
+            .first()
+        )
+
+        if not tx:
+            return jsonify(ok=False, error="tx_not_found"), 404
+
+        if tx.status == "confirmed":
+            return jsonify(ok=True, status="already_confirmed")
+
+        # 🔍 VERIFY ON BLOCKCHAIN
+        is_valid = verify_ton_tx_with_retry(
+            tx_hash=tx.external_id,
+            expected_amount_ton=tx.amount,
+        )
+
+        if not is_valid:
+            return jsonify(ok=False, status="still_pending")
+
+        # ✅ FINALIZE
+        finalize_deposit(db, tx)
+        db.commit()
+
+        return jsonify(ok=True, status="confirmed")
+
+    except Exception:
+        db.rollback()
+        current_app.logger.exception("deposit_verify failed")
+        return jsonify(ok=False, error="server_error"), 500
+
+    finally:
+        db.close()
+
  
 @app.route("/webhook", methods=["POST"])
 def telegram_webhook():
