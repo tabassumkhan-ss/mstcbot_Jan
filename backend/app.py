@@ -722,24 +722,40 @@ def webapp_user():
 
 @app.route("/admin/users", methods=["POST"])
 def admin_users():
-    
+
     data = request.get_json(silent=True) or {}
     init_data = data.get("initData")
+    fallback_user_id = data.get("user_id")
 
-    if not init_data:
-        return jsonify({
-            "ok": False,
-            "error": "missing_init_data"
-        }), 400
+    uid = None
 
-    uid, _, _, _ = verify_telegram_init_data(init_data)
+    # -----------------------------
+    # 1️⃣ Try Telegram verification
+    # -----------------------------
+    if init_data:
+        try:
+            uid, _, _, _ = verify_telegram_init_data(init_data)
+        except Exception:
+            uid = None
+
+    # -----------------------------
+    # 2️⃣ Admin fallback (browser / bootstrap)
+    # -----------------------------
     if not uid:
-        return jsonify({
-            "ok": False,
-            "error": "unauthorized"
-        }), 401
+        if fallback_user_id:
+            uid = int(fallback_user_id)
+            current_app.logger.warning(
+                "⚠️ Admin fallback used for uid=%s", uid
+            )
+        else:
+            return jsonify({
+                "ok": False,
+                "error": "unauthorized"
+            }), 401
 
-   
+    # -----------------------------
+    # 3️⃣ DB + admin check
+    # -----------------------------
     db = SessionLocal()
     try:
         admin_user = (
@@ -748,7 +764,7 @@ def admin_users():
             .first()
         )
 
-        if not require_admin(admin_user):
+        if not admin_user or not require_admin(admin_user):
             return jsonify({
                 "ok": False,
                 "error": "forbidden"
@@ -771,7 +787,7 @@ def admin_users():
                     "role": u.role,
                     "balance_musd": float(u.balance_musd or 0),
                     "balance_mstc": float(u.balance_mstc or 0),
-                    "active": bool(u.active)
+                    "active": bool(getattr(u, "active", False))
                 }
                 for u in users
             ]

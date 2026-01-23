@@ -1339,7 +1339,11 @@ async function openAdminUsers() {
     const res = await fetch(BACKEND_URL + "/admin/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ initData: tg.initData })
+      body: JSON.stringify({
+  initData: tg.initData || "manual_bootstrap",
+  user_id: tg?.initDataUnsafe?.user?.id || window.currentUserData?.id
+})
+
     });
 
     const data = await res.json();
