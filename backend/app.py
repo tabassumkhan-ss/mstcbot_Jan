@@ -147,6 +147,17 @@ logger.info("ENV=%s | DEBUG_MODE=%s", ENV, DEBUG_MODE)
 logger.info("BOT_TOKEN loaded: %s", "YES" if os.getenv("BOT_TOKEN") else "NO")
 
 # -------------------------
+# Bootstrap admin 
+# -------------------------
+BOOTSTRAP_ADMIN_ID = os.getenv("BOOTSTRAP_ADMIN_TELEGRAM_ID")
+
+try:
+    BOOTSTRAP_ADMIN_ID = int(BOOTSTRAP_ADMIN_ID) if BOOTSTRAP_ADMIN_ID else None
+except ValueError:
+    BOOTSTRAP_ADMIN_ID = None
+
+
+# -------------------------
 # DEBUG KEY CHECK (UNCHANGED)
 # -------------------------
 def check_debug_key():
@@ -550,7 +561,7 @@ def webapp_init():
     start_param = None
 
     # -----------------------------
-    # 1️⃣ Try FULL Telegram verification
+    # 1️⃣ Telegram verification (primary)
     # -----------------------------
     if init_data:
         try:
@@ -561,7 +572,7 @@ def webapp_init():
             app.logger.warning("Telegram init verify failed: %s", e)
 
     # -----------------------------
-    # 2️⃣ SAFE FALLBACK (Mini App only)
+    # 2️⃣ Safe fallback (browser / bootstrap only)
     # -----------------------------
     if not telegram_id:
         if fallback_user_id:
@@ -575,13 +586,32 @@ def webapp_init():
             return jsonify(ok=False, error="invalid_telegram_user"), 400
 
     # -----------------------------
-    # 3️⃣ Database logic
+    # 3️⃣ DB logic
     # -----------------------------
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.id == telegram_id).first()
 
+        # =============================
+        # EXISTING USER
+        # =============================
         if user:
+
+            # 🔐 BOOTSTRAP ADMIN (ONE-TIME)
+            if (
+                BOOTSTRAP_ADMIN_ID
+                and telegram_id == BOOTSTRAP_ADMIN_ID
+                and user.role not in ("admin", "superadmin")
+            ):
+                user.role = "admin"
+                db.commit()
+                db.refresh(user)
+
+                app.logger.warning(
+                    "🚀 BOOTSTRAP ADMIN applied to existing user %s",
+                    telegram_id
+                )
+
             return jsonify(
                 ok=True,
                 exists=True,
@@ -590,14 +620,16 @@ def webapp_init():
                     "first_name": user.first_name,
                     "username": user.username,
                     "role": user.role,
-                    "self_activated": user.self_activated,
+                    "self_activated": bool(user.self_activated),
                     "total_team_business": float(user.total_team_business or 0),
                     "active_origin_count": int(user.active_origin_count or 0),
                     "referrer_id": user.referrer_id,
                 }
             )
 
-        # New user
+        # =============================
+        # NEW USER
+        # =============================
         referrer_id = None
         if start_param and str(start_param).isdigit():
             referrer_id = int(start_param)
@@ -607,7 +639,24 @@ def webapp_init():
             first_name=first_name,
             username=username,
             referrer_id=referrer_id,
+            role="user",
+            self_activated=False,
+            balance_musd=0.0,
+            balance_mstc=0.0,
+            total_team_business=0.0,
+            active_origin_count=0,
+            created_at=datetime.utcnow(),
         )
+
+        # 🔐 BOOTSTRAP ADMIN (NEW USER)
+        if BOOTSTRAP_ADMIN_ID and telegram_id == BOOTSTRAP_ADMIN_ID:
+            user.role = "admin"
+            user.self_activated = True
+
+            app.logger.warning(
+                "🚀 BOOTSTRAP ADMIN applied to NEW user %s",
+                telegram_id
+            )
 
         db.add(user)
         db.commit()
@@ -621,7 +670,7 @@ def webapp_init():
                 "first_name": user.first_name,
                 "username": user.username,
                 "role": user.role,
-                "self_activated": False,
+                "self_activated": bool(user.self_activated),
                 "total_team_business": 0,
                 "active_origin_count": 0,
                 "referrer_id": user.referrer_id,
@@ -630,6 +679,7 @@ def webapp_init():
 
     finally:
         db.close()
+
 
 @app.route("/webapp/user", methods=["POST"])
 def webapp_user():
