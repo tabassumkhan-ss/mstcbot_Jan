@@ -1627,44 +1627,39 @@ async function openAdminStats() {
   try {
     openModal("System Stats", "<div class='mini'>Loading system stats…</div>");
 
-    const payload = {
-      initData: Telegram.WebApp?.initData || null,
-      user_id: window.currentUserData?.id || null
-    };
-
     const res = await fetch(BACKEND_URL + "/admin/stats", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        initData: Telegram.WebApp.initData
+      })
     });
 
     const data = await res.json();
 
     if (!data.ok) {
-      throw new Error(data.error || "stats_failed");
+      openModal("System Stats", "❌ Failed to load system stats");
+      return;
     }
 
-    const s = data.stats;
+    const s = data.stats;   // 🔑 THIS LINE IS CRITICAL
 
-    openModal("📊 System Statistics", `
-      <div class="admin-user-row"><b>👥 Total Users</b>: ${s.total_users}</div>
-      <div class="admin-user-row"><b>✅ Activated Users</b>: ${s.active_users}</div>
-      <div class="admin-user-row"><b>🛡 Admin Accounts</b>: ${s.admin_count}</div>
+    openModal("System Stats", `
+      <div><b>Total Users:</b> ${s.total_users}</div>
+      <div><b>🔥 Activated Users:</b> ${s.activated_users}</div>
+      <div><b>Admins:</b> ${s.admin_count}</div>
+      <div><b>Total Team Business:</b> $${s.total_team_business}</div>
+      <div><b>Total MUSD Balance:</b> $${s.total_musd_balance}</div>
+      <div><b>Today's Deposits:</b> $${s.today_deposits}</div>
 
-      <hr style="border-color:rgba(255,255,255,.1);margin:10px 0">
-
-      <div class="admin-user-row"><b>💰 Total Team Business</b>: $${s.total_team_business.toFixed(2)}</div>
-      <div class="admin-user-row"><b>🏦 Total MUSD Balance</b>: $${s.total_musd_balance.toFixed(2)}</div>
-      <div class="admin-user-row"><b>📅 Today’s Deposits</b>: $${s.today_deposits.toFixed(2)}</div>
-
-      <div style="margin-top:12px;text-align:right">
-        <button class="btn secondary" onclick="closeModal()">Close</button>
+      <div style="margin-top:10px">
+        <button class="btn secondary" onclick="closeModal()">⬅ Close</button>
       </div>
     `);
 
   } catch (err) {
     console.error("openAdminStats error", err);
-    openModal("Admin Error", "⚠️ Failed to load system stats");
+    openModal("System Stats", "❌ Failed to load system stats");
   }
 }
 
