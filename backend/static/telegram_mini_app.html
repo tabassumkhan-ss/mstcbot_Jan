@@ -1638,22 +1638,28 @@ async function openAdminStats() {
     const data = await res.json();
 
     if (!data.ok) {
-      openModal("System Stats", "❌ Failed to load system stats");
-      return;
+      throw new Error("Stats load failed");
     }
 
-    const s = data.stats;   // 🔑 THIS LINE IS CRITICAL
+    const s = data.stats;
 
     openModal("System Stats", `
-      <div><b>Total Users:</b> ${s.total_users}</div>
-      <div><b>🔥 Activated Users:</b> ${s.activated_users}</div>
-      <div><b>Admins:</b> ${s.admin_count}</div>
-      <div><b>Total Team Business:</b> $${s.total_team_business}</div>
-      <div><b>Total MUSD Balance:</b> $${s.total_musd_balance}</div>
-      <div><b>Today's Deposits:</b> $${s.today_deposits}</div>
+      <div style="display:grid; gap:10px; font-size:14px">
 
-      <div style="margin-top:10px">
-        <button class="btn secondary" onclick="closeModal()">⬅ Close</button>
+        <div><b>👥 Total Users:</b> ${s.total_users}</div>
+        <div><b>✅ Activated Users:</b> ${s.activated_users}</div>
+        <div><b>🛡 Admins:</b> ${s.admin_count}</div>
+
+        <hr style="opacity:.2">
+
+        <div><b>💰 Total Team Business:</b> $${s.total_team_business}</div>
+        <div><b>💵 Total MUSD Balance:</b> $${s.total_musd_balance}</div>
+        <div><b>📅 Today’s Deposits:</b> $${s.today_deposits}</div>
+
+        <div style="margin-top:10px">
+          <button class="btn secondary" onclick="closeModal()">⬅ Close</button>
+        </div>
+
       </div>
     `);
 
