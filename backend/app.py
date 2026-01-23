@@ -923,17 +923,17 @@ def admin_stats():
 
     admin_id = None
 
-    # 1️⃣ Normal Telegram verification
+    # 1️⃣ Telegram verification
     if init_data:
         admin_id, _, _, _ = verify_telegram_init_data(init_data)
 
-    # 2️⃣ Bootstrap fallback (DEV / browser mode)
+    # 2️⃣ Bootstrap fallback (browser / dev)
     if not admin_id and fallback_user_id:
         bootstrap_id = os.getenv("BOOTSTRAP_ADMIN_TELEGRAM_ID")
         if bootstrap_id and int(fallback_user_id) == int(bootstrap_id):
             admin_id = int(fallback_user_id)
             current_app.logger.warning(
-                "⚠️ Admin bootstrap access used for stats (uid=%s)", admin_id
+                "⚠️ Admin bootstrap used for stats (uid=%s)", admin_id
             )
 
     if not admin_id:
@@ -946,12 +946,12 @@ def admin_stats():
         if not admin or admin.role not in ("admin", "superadmin"):
             return jsonify({"ok": False, "error": "forbidden"}), 403
 
-        # --------- STATS ----------
+        # ---------- SAFE STATS ----------
         total_users = db.query(User).count()
 
-        active_users = (
+        activated_users = (
             db.query(User)
-            .filter(User.active.is_(True))
+            .filter(User.self_activated.is_(True))
             .count()
         )
 
@@ -983,13 +983,17 @@ def admin_stats():
             "ok": True,
             "stats": {
                 "total_users": int(total_users),
-                "active_users": int(active_users),
+                "activated_users": int(activated_users),
                 "admin_count": int(admin_count),
                 "total_team_business": float(total_team_business or 0),
                 "total_musd_balance": float(total_musd_balance or 0),
                 "today_deposits": float(today_deposits or 0),
             }
         })
+
+    except Exception:
+        current_app.logger.exception("admin_stats failed")
+        return jsonify({"ok": False, "error": "server_error"}), 500
 
     finally:
         db.close()
