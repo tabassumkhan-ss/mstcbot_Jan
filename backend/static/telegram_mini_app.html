@@ -1627,20 +1627,21 @@ async function openAdminStats() {
   try {
     openModal("System Stats", "<div class='mini'>Loading system stats…</div>");
 
+    const payload = {
+      initData: Telegram.WebApp?.initData || null,
+      user_id: window.currentUserData?.id || null
+    };
+
     const res = await fetch(BACKEND_URL + "/admin/stats", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        initData: Telegram.WebApp.initData || "manual_bootstrap",
-        user_id: window.currentUserData?.id
-      })
+      body: JSON.stringify(payload)
     });
 
     const data = await res.json();
 
     if (!data.ok) {
-      openModal("Admin Error", "❌ Access denied");
-      return;
+      throw new Error(data.error || "stats_failed");
     }
 
     const s = data.stats;
@@ -1666,7 +1667,6 @@ async function openAdminStats() {
     openModal("Admin Error", "⚠️ Failed to load system stats");
   }
 }
-
 
 function updateAdminMenuVisibility() {
   const adminMenu = document.getElementById("adminMenu");

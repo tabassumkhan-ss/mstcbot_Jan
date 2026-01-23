@@ -917,37 +917,34 @@ def admin_impersonate():
 
 @app.route("/admin/stats", methods=["POST"])
 def admin_stats():
-    
     data = request.get_json(silent=True) or {}
     init_data = data.get("initData")
+    fallback_user_id = data.get("user_id")
 
-    if not init_data:
-        return jsonify({
-            "ok": False,
-            "error": "missing_init_data"
-        }), 400
+    admin_id = None
 
-    admin_id, _, _, _ = verify_telegram_init_data(init_data)
+    # 1️⃣ Normal Telegram verification
+    if init_data:
+        admin_id, _, _, _ = verify_telegram_init_data(init_data)
+
+    # 2️⃣ Bootstrap fallback (DEV / browser mode)
+    if not admin_id and fallback_user_id:
+        bootstrap_id = os.getenv("BOOTSTRAP_ADMIN_TELEGRAM_ID")
+        if bootstrap_id and int(fallback_user_id) == int(bootstrap_id):
+            admin_id = int(fallback_user_id)
+            current_app.logger.warning(
+                "⚠️ Admin bootstrap access used for stats (uid=%s)", admin_id
+            )
+
     if not admin_id:
-        return jsonify({
-            "ok": False,
-            "error": "unauthorized"
-        }), 401
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
 
-    
     db = SessionLocal()
     try:
-        admin = (
-            db.query(User)
-            .filter(User.id == admin_id)
-            .first()
-        )
+        admin = db.query(User).filter(User.id == admin_id).first()
 
-        if not admin or not require_admin(admin):
-            return jsonify({
-                "ok": False,
-                "error": "forbidden"
-            }), 403
+        if not admin or admin.role not in ("admin", "superadmin"):
+            return jsonify({"ok": False, "error": "forbidden"}), 403
 
         # --------- STATS ----------
         total_users = db.query(User).count()
