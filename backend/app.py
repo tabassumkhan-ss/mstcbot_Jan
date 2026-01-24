@@ -798,33 +798,38 @@ def admin_users():
 
 @app.route("/admin/update_user", methods=["POST"])
 def admin_update_user():
-    
+
     data = request.get_json(silent=True) or {}
     init_data = data.get("initData")
     target_id = data.get("user_id")
     action = data.get("action")
 
-    if not init_data or not target_id or not action:
+    if not target_id or not action:
         return jsonify({
             "ok": False,
             "error": "missing_params"
         }), 400
 
-    admin_id, _, _, _ = verify_telegram_init_data(init_data)
-    if not admin_id:
-        return jsonify({
-            "ok": False,
-            "error": "unauthorized"
-        }), 401
+    admin_id = None
 
-    
+    # 1️⃣ Try Telegram verification
+    if init_data:
+        admin_id, _, _, _ = verify_telegram_init_data(init_data)
+
+    # 2️⃣ FALLBACK (browser / bootstrap mode)
+    if not admin_id:
+        bootstrap_admin = os.getenv("BOOTSTRAP_ADMIN_TELEGRAM_ID")
+        if bootstrap_admin:
+            admin_id = int(bootstrap_admin)
+        else:
+            return jsonify({
+                "ok": False,
+                "error": "unauthorized"
+            }), 401
+
     db = SessionLocal()
     try:
-        admin = (
-            db.query(User)
-            .filter(User.id == admin_id)
-            .first()
-        )
+        admin = db.query(User).filter(User.id == admin_id).first()
 
         if not admin or admin.role not in ("admin", "superadmin"):
             return jsonify({
@@ -832,17 +837,19 @@ def admin_update_user():
                 "error": "forbidden"
             }), 403
 
-        user = (
-            db.query(User)
-            .filter(User.id == int(target_id))
-            .first()
-        )
-
+        user = db.query(User).filter(User.id == int(target_id)).first()
         if not user:
             return jsonify({
                 "ok": False,
                 "error": "user_not_found"
             }), 404
+
+        # 🔒 Prevent self-demotion
+        if user.id == admin.id and action in ("demote", "deactivate"):
+            return jsonify({
+                "ok": False,
+                "error": "cannot_modify_self"
+            }), 400
 
         # -------- ACTIONS --------
         if action == "promote":
@@ -870,9 +877,17 @@ def admin_update_user():
             "user": {
                 "id": user.id,
                 "role": user.role,
-                "active": bool(user.active)
+                "active": bool(getattr(user, "active", True))
             }
         })
+
+    except Exception as e:
+        db.rollback()
+        app.logger.exception("admin_update_user failed")
+        return jsonify({
+            "ok": False,
+            "error": "server_error"
+        }), 500
 
     finally:
         db.close()
