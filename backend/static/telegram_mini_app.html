@@ -1489,29 +1489,37 @@ async function adminUpdateUser(userId, action) {
   if (!confirm(confirmMsg)) return;
 
   try {
+    const payload = {
+      action,
+      user_id: userId
+    };
+
+    // 🔑 Telegram initData if available
+    if (Telegram?.WebApp?.initData) {
+      payload.initData = Telegram.WebApp.initData;
+    } else {
+      // 🛟 Browser / fallback mode
+      payload.user_id = window.currentUserData?.id;
+    }
+
     const res = await fetch(BACKEND_URL + "/admin/update_user", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        initData: tg.initData,
-        user_id: userId,
-        action
-      })
+      body: JSON.stringify(payload)
     });
 
     const data = await res.json();
 
     if (!data.ok) {
-      alert("Action failed");
-      return;
+      throw new Error(data.error || "Action failed");
     }
 
-    // Refresh list
+    // 🔄 Refresh users list
     openAdminUsers();
 
   } catch (err) {
-    console.error("adminUpdateUser error", err);
-    alert("Server error");
+    console.error("adminUpdateUser error:", err);
+    alert("❌ Server error. Please try again.");
   }
 }
 
